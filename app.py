@@ -1882,66 +1882,7 @@ def show_work_input():
     """, unsafe_allow_html=True)
 
     show_bottom_nav()
-
 def show_bottom_nav():
-
-    st.markdown("""
-<style>
-.bottom-nav-spacer {
-    height: 88px;
-}
-
-/* 컬럼 사이 간격 제거 */
-div[data-testid="column"] {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-}
-
-/* 버튼 공통 */
-div.stButton > button {
-    background: #fbf8fa !important;
-    color: #8a8f98 !important;
-    border: none !important;
-    box-shadow: none !important;
-
-    font-size: 28px !important;
-    font-weight: 900 !important;
-
-    min-height: 64px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-
-    border-top: 1px solid #c5c6cd !important;
-    border-bottom: 1px solid #c5c6cd !important;
-}
-
-/* 첫 버튼 왼쪽 둥글게 */
-div[data-testid="column"]:first-of-type div.stButton > button {
-    border-left: 1px solid #c5c6cd !important;
-    border-radius: 22px 0 0 22px !important;
-}
-
-/* 마지막 버튼 오른쪽 둥글게 */
-div[data-testid="column"]:last-of-type div.stButton > button {
-    border-right: 1px solid #c5c6cd !important;
-    border-radius: 0 22px 22px 0 !important;
-}
-
-/* 활성 버튼 */
-div.stButton > button[kind="primary"] {
-    color: #0b3fa5 !important;
-    background: rgba(11,63,165,0.06) !important;
-}
-
-/* hover */
-div.stButton > button:hover {
-    background: rgba(11,63,165,0.06) !important;
-    color: #0b3fa5 !important;
-}
-</style>
-<div class="bottom-nav-spacer"></div>
-""", unsafe_allow_html=True)
 
     current_page = st.session_state.get("page", "input")
     current_mode = st.session_state.get("mode", "작업자")
@@ -1949,54 +1890,84 @@ div.stButton > button:hover {
     last_page = "manager" if current_mode == "안전관리자" else "journal"
     last_icon = "▦" if current_mode == "안전관리자" else "✎"
 
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1], gap=None)
+    def nav_class(page_name):
+        return "bottom-nav-item active" if current_page == page_name else "bottom-nav-item"
 
-    with col1:
-        if st.button(
-            "⌂",
-            key="bottom_nav_home",
-            use_container_width=True,
-            type="primary" if current_page == "input" else "secondary"
-        ):
-            st.session_state.page = "input"
-            st.rerun()
+    st.markdown(f"""
+<style>
+.bottom-nav-spacer {{
+    height: 88px;
+}}
 
-    with col2:
-        if st.button(
-            "🚦",
-            key="bottom_nav_result",
-            use_container_width=True,
-            type="primary" if current_page == "result" else "secondary"
-        ):
-            if not st.session_state.get("result"):
-                st.toast("아직 위험도 분석 결과가 없습니다.", icon="⚠️")
-            else:
-                st.session_state.page = "result"
-                st.rerun()
+.bottom-nav-fixed {{
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    width: min(440px, calc(100% - 28px));
+    height: 64px;
+    background: #fbf8fa;
+    border: 1px solid #c5c6cd;
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.18);
+    z-index: 9999;
+    overflow: hidden;
 
-    with col3:
-        if st.button(
-            "☑",
-            key="bottom_nav_checklist",
-            use_container_width=True,
-            type="primary" if current_page == "checklist" else "secondary"
-        ):
-            if not st.session_state.get("result"):
-                st.toast("위험도 분석을 먼저 완료해야 체크리스트를 확인할 수 있습니다.", icon="⚠️")
-            else:
-                st.session_state.page = "checklist"
-                st.rerun()
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+}}
 
-    with col4:
-        if st.button(
-            last_icon,
-            key="bottom_nav_last",
-            use_container_width=True,
-            type="primary" if current_page == last_page else "secondary"
-        ):
-            st.session_state.page = last_page
-            st.rerun()
+.bottom-nav-item {{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none !important;
+    color: #8a8f98 !important;
+    font-size: 28px;
+    font-weight: 900;
+    height: 64px;
+    border-right: 1px solid #c5c6cd;
+    background: #fbf8fa;
+}}
 
+.bottom-nav-item:last-child {{
+    border-right: none;
+}}
+
+.bottom-nav-item.active {{
+    color: #0b3fa5 !important;
+    background: rgba(11,63,165,0.06);
+}}
+
+.bottom-nav-item:hover {{
+    color: #0b3fa5 !important;
+    background: rgba(11,63,165,0.06);
+}}
+
+@media (max-width: 640px) {{
+    .bottom-nav-fixed {{
+        width: calc(100% - 22px);
+        bottom: 10px;
+        height: 60px;
+        border-radius: 20px;
+    }}
+
+    .bottom-nav-item {{
+        height: 60px;
+        font-size: 24px;
+    }}
+}}
+</style>
+
+<div class="bottom-nav-spacer"></div>
+
+<div class="bottom-nav-fixed">
+    <a href="?page=input" target="_self" class="{nav_class("input")}">⌂</a>
+    <a href="?page=result" target="_self" class="{nav_class("result")}">🚦</a>
+    <a href="?page=checklist" target="_self" class="{nav_class("checklist")}">☑</a>
+    <a href="?page={last_page}" target="_self" class="{nav_class(last_page)}">{last_icon}</a>
+</div>
+""", unsafe_allow_html=True)
 
 def split_db_text(value):
     """
