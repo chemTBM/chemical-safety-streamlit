@@ -1018,6 +1018,61 @@ st.markdown("""
 
 </style>
 """, unsafe_allow_html=True)
+st.markdown("""
+<style>
+/* Streamlit 기본 상단툴바를 피해서 앱 상단바 고정 */
+.app-topbar,
+.result-page-topbar,
+.checklist-topbar,
+.journal-topbar,
+.create-team-topbar,
+.manager-topbar {
+    position: fixed !important;
+    top: 76px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+
+    width: min(480px, calc(100% - 28px)) !important;
+
+    z-index: 9998 !important;
+
+    margin: 0 !important;
+    box-sizing: border-box !important;
+
+    box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+}
+
+/* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가 */
+.fixed-topbar-spacer {
+    height: 92px;
+}
+
+/* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
+.manager-topbar {
+    background: #091426 !important;
+    color: white !important;
+    border-radius: 0 0 18px 18px !important;
+    padding: 18px 16px !important;
+}
+
+/* 모바일에서 살짝 조정 */
+@media (max-width: 640px) {
+    .app-topbar,
+    .result-page-topbar,
+    .checklist-topbar,
+    .journal-topbar,
+    .create-team-topbar,
+    .manager-topbar {
+        top: 76px !important;
+        width: calc(100% - 22px) !important;
+    }
+
+    .fixed-topbar-spacer {
+        height: 92px;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 # ========= 화면 구현 CCS =====
 
 if "page" not in st.session_state:
@@ -1132,6 +1187,9 @@ def show_active_help_popup():
     if active_page in HELP_IMAGES:
         show_help_popup(active_page)
 
+def render_topbar_spacer():
+    st.markdown('<div class="fixed-topbar-spacer"></div>', unsafe_allow_html=True)
+    
 def show_team_access():
 
     # Material Icons
@@ -1341,6 +1399,7 @@ def show_login():
     # =========================
     topbar_html = '<div class="create-team-topbar"><div class="create-team-topbar-row"><div class="create-team-left"><a href="?page=team_access" target="_self" style="text-decoration:none;"><div class="create-team-back">←</div></a><div class="create-team-app-title">작업 모드 선택</div></div><a href="?page=login&help=login" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
     # =========================
     # 로그인 헤더
@@ -1534,6 +1593,7 @@ def show_login():
 def show_create_team():
     topbar_html = '<div class="create-team-topbar"><div class="create-team-topbar-row"><div class="create-team-left"><a href="?page=team_access" target="_self" style="text-decoration:none;"><div class="create-team-back">←</div></a><div class="create-team-app-title">팀 생성</div></div><a href="?page=create_team&help=create_team" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
     st.markdown("""
 <div class="create-team-title">새 TBM 작업방 만들기</div>
@@ -1694,6 +1754,7 @@ def show_work_input():
     # =========================
     topbar_html = '<div class="app-topbar"><div class="topbar-row"><div class="topbar-left"><a href="?page=login" target="_self" style="text-decoration:none;"><div class="back-btn">←</div></a><div class="app-title">Safety TBM</div></div><a href="?page=input&help=input" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
     st.markdown("""
     <div>
@@ -3186,6 +3247,7 @@ def show_risk_result():
 
     topbar_html = '<div class="result-page-topbar"><div class="result-topbar-row"><div class="result-topbar-left"><a href="?page=input" target="_self" style="text-decoration:none;"><div class="result-back-icon">←</div></a><div class="result-app-title">Safety TBM</div></div><a href="?page=result&help=result" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
 
     # =========================
@@ -3324,6 +3386,7 @@ def show_checklist():
 
     topbar_html = '<div class="checklist-topbar"><div class="checklist-topbar-row"><div class="checklist-topbar-left"><a href="?page=result" target="_self" style="text-decoration:none;"><div class="checklist-back-icon">←</div></a><div class="checklist-app-title">Checklist</div></div><a href="?page=checklist&help=checklist" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
     work_data = st.session_state.get("work_data", {})
     worker_name = work_data.get("작업자명", "미입력")
@@ -3435,6 +3498,7 @@ def show_journal():
 
     topbar_html = '<div class="journal-topbar"><div class="journal-topbar-row"><div class="journal-topbar-left"><a href="?page=checklist" target="_self" style="text-decoration:none;"><div class="journal-back-icon">←</div></a><div class="journal-app-title">Safety TBM</div></div><a href="?page=journal&help=journal" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
     st.markdown(topbar_html, unsafe_allow_html=True)
+    render_topbar_spacer()
 
     # =========================
     # 데이터 불러오기
@@ -3804,6 +3868,7 @@ def show_manager_dashboard():
 """, unsafe_allow_html=True)
 
     st.markdown('<div class="manager-topbar"><div class="manager-title">안전관리자 대시보드</div><a href="?page=manager&help=manager" target="_self" style="text-decoration:none; color:white;"><div style="font-size:26px;">ℹ️</div></a></div>', unsafe_allow_html=True)
+    render_topbar_spacer()
 
     st.markdown('<div class="manager-section-title">오늘 작업 등록</div>', unsafe_allow_html=True)
 
