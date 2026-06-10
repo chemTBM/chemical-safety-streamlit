@@ -7,3 +7,4 @@ requests
 openpyxl
 supabase
 docxtpl
+openai>=1.0.0
