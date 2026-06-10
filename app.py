@@ -431,7 +431,7 @@ div.stButton > button {
 }
 
 .hero-title {
-    font-size: 29px;
+    font-size: 27px;
     line-height: 1.25;
     font-weight: 800;
     color: #091426;
