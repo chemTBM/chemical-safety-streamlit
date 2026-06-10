@@ -383,13 +383,21 @@ div.stButton > button {
 
 /* 작업정보 입력 화면 */
 .app-topbar {
-    position: sticky;
+    position: fixed;
     top: 4px;
-    z-index: 100;
+    left: 50%;
+    transform: translateX(-50%);
+
+    width: min(480px, calc(100% - 28px));
+
+    z-index: 9999;
+
     background: #fbf8fa;
     border-bottom: 1px solid #c5c6cd;
+
     padding: 14px 4px 12px 4px;
-    margin-bottom: 20px;
+
+    box-shadow: 0 4px 14px rgba(15,23,42,0.08);
 }
 
 .topbar-row {
