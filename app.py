@@ -1044,7 +1044,7 @@ st.markdown("""
 
 /* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가 */
 .fixed-topbar-spacer {
-    height: 20px;
+    height: 5px;
 }
 
 /* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
@@ -1063,12 +1063,12 @@ st.markdown("""
     .journal-topbar,
     .create-team-topbar,
     .manager-topbar {
-        top: 10px !important;
+        top: 76px !important;
         width: calc(100% - 22px) !important;
     }
 
     .fixed-topbar-spacer {
-        height: 20px;
+        height: 5px;
     }
 }
 </style>
