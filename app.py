@@ -218,7 +218,7 @@ div.stButton > button {
 
 .result-page-topbar {
     position: sticky;
-    top: 4px;
+    top: 2px;
     z-index: 100;
     background: #fbf8fa;
     border-bottom: 1px solid #c5c6cd;
@@ -1044,7 +1044,7 @@ st.markdown("""
 
 /* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가 */
 .fixed-topbar-spacer {
-    height: 92px;
+    height: 30px;
 }
 
 /* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
