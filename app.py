@@ -16,6 +16,7 @@ from openai import OpenAI
 from supabase import create_client
 from io import BytesIO
 from docxtpl import DocxTemplate
+from streamlit_js_eval import streamlit_js_eval
 
 # =========================
 # 1) 파일 불러오기
@@ -1020,13 +1021,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("""
 <style>
-/* Streamlit 기본 상단툴바를 피해서 앱 상단바 고정 */
-.app-topbar,
-.result-page-topbar,
-.checklist-topbar,
-.journal-topbar,
-.create-team-topbar,
-.manager-topbar {
+/* Streamlit 기본 상단툴바를 피해서 앱 상단바 고정 (render_topbar()가 만드는 st.container(key="topbar_*")를 타겟) */
+div[class*="st-key-topbar_"] {
     position: fixed !important;
     top: 76px !important;
     left: 50% !important;
@@ -1039,6 +1035,11 @@ st.markdown("""
     margin: 0 !important;
     box-sizing: border-box !important;
 
+    background: #fbf8fa;
+    border-bottom: 1px solid #c5c6cd;
+    border-radius: 0 0 14px 14px;
+    padding: 10px 10px !important;
+
     box-shadow: 0 4px 14px rgba(15,23,42,0.08);
 }
 
@@ -1048,21 +1049,36 @@ st.markdown("""
 }
 
 /* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
-.manager-topbar {
+div[class*="st-key-topbar_manager"] {
     background: #091426 !important;
-    color: white !important;
+    border-bottom: none !important;
     border-radius: 0 0 18px 18px !important;
-    padding: 18px 16px !important;
+}
+
+/* 뒤로가기(←) / 안내(ℹ️) 버튼을 동그란 아이콘처럼 보이도록 스타일링 */
+div[class*="st-key-tbback_"] button,
+div[class*="st-key-tbhelp_"] button {
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    background: #f0edef !important;
+    color: #091426 !important;
+    font-weight: 800 !important;
+    font-size: 16px !important;
+    border: none !important;
+}
+
+div[class*="st-key-tbback_manager"] button,
+div[class*="st-key-tbhelp_manager"] button {
+    background: rgba(255,255,255,0.14) !important;
+    color: white !important;
 }
 
 /* 모바일에서 살짝 조정 */
 @media (max-width: 640px) {
-    .app-topbar,
-    .result-page-topbar,
-    .checklist-topbar,
-    .journal-topbar,
-    .create-team-topbar,
-    .manager-topbar {
+    div[class*="st-key-topbar_"] {
         top: 76px !important;
         width: calc(100% - 22px) !important;
     }
@@ -1082,6 +1098,9 @@ query_params = st.query_params
 
 if query_params.get("page"):
     st.session_state.page = query_params.get("page")
+    # 이 값을 URL에 남겨두면 다음 rerun마다(버튼 클릭 등 세션 내부 이동에도) 이 값으로
+    # session_state.page가 계속 덮어써지므로, 한 번 반영한 뒤에는 즉시 지운다.
+    del st.query_params["page"]
 
 if "mode" not in st.session_state:
     st.session_state.mode = "작업자"
@@ -1130,7 +1149,11 @@ def get_help_image_path(image_name):
     return None
 
 
-@st.dialog("화면 안내", width="large")
+def _close_help_popup():
+    st.session_state.active_help_page = None
+
+
+@st.dialog("화면 안내", width="large", on_dismiss=_close_help_popup)
 def show_help_popup(page_key):
     image_list = HELP_IMAGES.get(page_key, [])
 
@@ -1157,9 +1180,8 @@ def show_help_popup(page_key):
         col_prev, col_page, col_next = st.columns([1, 2, 1])
 
         with col_prev:
-            if st.button("◀ 이전", use_container_width=True):
+            if st.button("◀ 이전", use_container_width=True, key=f"help_prev_{page_key}"):
                 st.session_state[slide_key] = (current_idx - 1) % len(image_list)
-                st.session_state.active_help_page = page_key
                 st.rerun()
 
         with col_page:
@@ -1169,17 +1191,10 @@ def show_help_popup(page_key):
             )
 
         with col_next:
-            if st.button("다음 ▶", use_container_width=True):
+            if st.button("다음 ▶", use_container_width=True, key=f"help_next_{page_key}"):
                 st.session_state[slide_key] = (current_idx + 1) % len(image_list)
-                st.session_state.active_help_page = page_key
                 st.rerun()
 
-
-def open_help_if_requested():
-    help_page = st.query_params.get("help")
-
-    if help_page in HELP_IMAGES:
-        show_help_popup(help_page)
 
 def show_active_help_popup():
     active_page = st.session_state.get("active_help_page")
@@ -1189,7 +1204,38 @@ def show_active_help_popup():
 
 def render_topbar_spacer():
     st.markdown('<div class="fixed-topbar-spacer"></div>', unsafe_allow_html=True)
-    
+
+def render_topbar(topbar_key, title, title_class, back_page=None, help_key=None):
+    """
+    뒤로가기/안내 아이콘이 있는 상단바.
+    <a href="?page=..."> 링크는 브라우저 풀 리로드를 유발해 st.session_state(team_id 등)가
+    통째로 초기화되므로, st.button + st.rerun()으로 같은 세션 안에서 화면만 전환한다.
+    """
+    with st.container(key=f"topbar_{topbar_key}"):
+        if back_page:
+            col_back, col_title, col_info = st.columns([1, 6, 1], vertical_alignment="center")
+        else:
+            col_back = None
+            col_title, col_info = st.columns([6, 1], vertical_alignment="center")
+
+        if col_back is not None:
+            with col_back:
+                if st.button("←", key=f"tbback_{topbar_key}"):
+                    st.session_state.page = back_page
+                    st.rerun()
+
+        with col_title:
+            st.markdown(f'<div class="{title_class}">{title}</div>', unsafe_allow_html=True)
+
+        with col_info:
+            if help_key:
+                if st.button("ℹ️", key=f"tbhelp_{topbar_key}"):
+                    st.session_state.active_help_page = help_key
+                    st.session_state.pop(f"help_slide_{help_key}", None)
+                    st.rerun()
+
+    render_topbar_spacer()
+
 def show_team_access():
 
     # Material Icons
@@ -1397,9 +1443,7 @@ def show_login():
     # =========================
     # 상단바
     # =========================
-    topbar_html = '<div class="create-team-topbar"><div class="create-team-topbar-row"><div class="create-team-left"><a href="?page=team_access" target="_self" style="text-decoration:none;"><div class="create-team-back">←</div></a><div class="create-team-app-title">작업 모드 선택</div></div><a href="?page=login&help=login" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("login", "작업 모드 선택", "create-team-app-title", back_page="team_access", help_key="login")
 
     # =========================
     # 로그인 헤더
@@ -1591,9 +1635,7 @@ def show_login():
     st.markdown(footer_html, unsafe_allow_html=True)
 
 def show_create_team():
-    topbar_html = '<div class="create-team-topbar"><div class="create-team-topbar-row"><div class="create-team-left"><a href="?page=team_access" target="_self" style="text-decoration:none;"><div class="create-team-back">←</div></a><div class="create-team-app-title">팀 생성</div></div><a href="?page=create_team&help=create_team" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("create_team", "팀 생성", "create-team-app-title", back_page="team_access", help_key="create_team")
 
     st.markdown("""
 <div class="create-team-title">새 TBM 작업방 만들기</div>
@@ -1752,9 +1794,7 @@ def show_work_input():
     # =========================
     # 상단바
     # =========================
-    topbar_html = '<div class="app-topbar"><div class="topbar-row"><div class="topbar-left"><a href="?page=login" target="_self" style="text-decoration:none;"><div class="back-btn">←</div></a><div class="app-title">Safety TBM</div></div><a href="?page=input&help=input" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("input", "Safety TBM", "app-title", back_page="login", help_key="input")
 
     st.markdown("""
     <div>
@@ -1810,7 +1850,7 @@ def show_work_input():
     # =========================
     # 작업 시간
     # =========================
-    time_slot, current_dt = get_current_time_slot()
+    time_slot, current_dt = get_current_time_slot(get_client_datetime())
     current_time = current_dt.strftime("%Y-%m-%d %H:%M")
 
     st.markdown('<div class="input-card input-card-muted">', unsafe_allow_html=True)
@@ -1952,6 +1992,8 @@ def show_work_input():
 
     show_bottom_nav()
 def show_bottom_nav():
+    # <a href="?page=..."> 링크는 브라우저 풀 리로드를 유발해 st.session_state(team_id 등)가
+    # 통째로 초기화되므로, st.button + st.rerun()으로 같은 세션 안에서 화면만 전환한다.
 
     current_page = st.session_state.get("page", "input")
     current_mode = st.session_state.get("mode", "작업자")
@@ -1959,84 +2001,67 @@ def show_bottom_nav():
     last_page = "manager" if current_mode == "안전관리자" else "journal"
     last_icon = "▦" if current_mode == "안전관리자" else "✎"
 
-    def nav_class(page_name):
-        return "bottom-nav-item active" if current_page == page_name else "bottom-nav-item"
+    nav_items = [
+        ("input", "⌂"),
+        ("result", "🚦"),
+        ("checklist", "☑"),
+        (last_page, last_icon),
+    ]
 
-    st.markdown(f"""
+    st.markdown("""
 <style>
-.bottom-nav-spacer {{
+.bottom-nav-spacer {
     height: 88px;
-}}
+}
 
-.bottom-nav-fixed {{
-    position: fixed;
-    left: 50%;
-    bottom: 14px;
-    transform: translateX(-50%);
-    width: min(440px, calc(100% - 28px));
-    height: 64px;
+div[class*="st-key-bottomnavbar"] {
+    position: fixed !important;
+    left: 50% !important;
+    bottom: 14px !important;
+    transform: translateX(-50%) !important;
+    width: min(440px, calc(100% - 28px)) !important;
     background: #fbf8fa;
     border: 1px solid #c5c6cd;
     border-radius: 22px;
     box-shadow: 0 10px 30px rgba(15,23,42,0.18);
-    z-index: 9999;
-    overflow: hidden;
+    z-index: 9999 !important;
+    padding: 6px !important;
+}
 
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-}}
-
-.bottom-nav-item {{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none !important;
+div[class*="st-key-navbtn_"] button {
+    border: none !important;
+    background: transparent !important;
     color: #8a8f98 !important;
-    font-size: 28px;
-    font-weight: 900;
-    height: 64px;
-    border-right: 1px solid #c5c6cd;
-    background: #fbf8fa;
-}}
+    font-size: 26px !important;
+    font-weight: 900 !important;
+    height: 52px !important;
+    width: 100% !important;
+    border-radius: 16px !important;
+}
 
-.bottom-nav-item:last-child {{
-    border-right: none;
-}}
-
-.bottom-nav-item.active {{
+div[class*="st-key-navbtnactive_"] button {
     color: #0b3fa5 !important;
-    background: rgba(11,63,165,0.06);
-}}
+    background: rgba(11,63,165,0.08) !important;
+}
 
-.bottom-nav-item:hover {{
-    color: #0b3fa5 !important;
-    background: rgba(11,63,165,0.06);
-}}
-
-@media (max-width: 640px) {{
-    .bottom-nav-fixed {{
-        width: calc(100% - 22px);
-        bottom: 10px;
-        height: 60px;
-        border-radius: 20px;
-    }}
-
-    .bottom-nav-item {{
-        height: 60px;
-        font-size: 24px;
-    }}
-}}
+@media (max-width: 640px) {
+    div[class*="st-key-bottomnavbar"] {
+        width: calc(100% - 22px) !important;
+        bottom: 10px !important;
+    }
+}
 </style>
-
 <div class="bottom-nav-spacer"></div>
-
-<div class="bottom-nav-fixed">
-    <a href="?page=input" target="_self" class="{nav_class("input")}">⌂</a>
-    <a href="?page=result" target="_self" class="{nav_class("result")}">🚦</a>
-    <a href="?page=checklist" target="_self" class="{nav_class("checklist")}">☑</a>
-    <a href="?page={last_page}" target="_self" class="{nav_class(last_page)}">{last_icon}</a>
-</div>
 """, unsafe_allow_html=True)
+
+    with st.container(key="bottomnavbar"):
+        cols = st.columns(4)
+        for col, (page_name, icon) in zip(cols, nav_items):
+            with col:
+                key = f"navbtnactive_{page_name}" if current_page == page_name else f"navbtn_{page_name}"
+                if st.button(icon, key=key):
+                    st.session_state.page = page_name
+                    st.rerun()
 
 def split_db_text(value):
     """
@@ -3245,9 +3270,7 @@ def show_risk_result():
     st.session_state.work_data["safety_measure_2"] = safety_measure_2
     st.session_state.work_data["safety_measure_3"] = safety_measure_3
 
-    topbar_html = '<div class="result-page-topbar"><div class="result-topbar-row"><div class="result-topbar-left"><a href="?page=input" target="_self" style="text-decoration:none;"><div class="result-back-icon">←</div></a><div class="result-app-title">Safety TBM</div></div><a href="?page=result&help=result" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("result", "Safety TBM", "result-app-title", back_page="input", help_key="result")
 
 
     # =========================
@@ -3384,9 +3407,7 @@ def show_risk_result():
 
 def show_checklist():
 
-    topbar_html = '<div class="checklist-topbar"><div class="checklist-topbar-row"><div class="checklist-topbar-left"><a href="?page=result" target="_self" style="text-decoration:none;"><div class="checklist-back-icon">←</div></a><div class="checklist-app-title">Checklist</div></div><a href="?page=checklist&help=checklist" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("checklist", "Checklist", "checklist-app-title", back_page="result", help_key="checklist")
 
     work_data = st.session_state.get("work_data", {})
     worker_name = work_data.get("작업자명", "미입력")
@@ -3496,9 +3517,7 @@ def show_checklist():
 
 def show_journal():
 
-    topbar_html = '<div class="journal-topbar"><div class="journal-topbar-row"><div class="journal-topbar-left"><a href="?page=checklist" target="_self" style="text-decoration:none;"><div class="journal-back-icon">←</div></a><div class="journal-app-title">Safety TBM</div></div><a href="?page=journal&help=journal" target="_self" style="text-decoration:none;"><div style="font-size:22px; color:#45474c;">ℹ️</div></a></div></div>'
-    st.markdown(topbar_html, unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("journal", "Safety TBM", "journal-app-title", back_page="checklist", help_key="journal")
 
     # =========================
     # 데이터 불러오기
@@ -3715,20 +3734,10 @@ def show_manager_dashboard():
 
     st.markdown("""
 <style>
-.manager-topbar {
-    background: #091426;
-    color: white;
-    border-radius: 0 0 18px 18px;
-    padding: 18px 16px;
-    margin: -24px -8px 20px -8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
 .manager-title {
     font-size: 24px;
     font-weight: 900;
+    color: white;
 }
 
 .manager-summary-grid {
@@ -3867,8 +3876,7 @@ def show_manager_dashboard():
 </style>
 """, unsafe_allow_html=True)
 
-    st.markdown('<div class="manager-topbar"><div class="manager-title">안전관리자 대시보드</div><a href="?page=manager&help=manager" target="_self" style="text-decoration:none; color:white;"><div style="font-size:26px;">ℹ️</div></a></div>', unsafe_allow_html=True)
-    render_topbar_spacer()
+    render_topbar("manager", "안전관리자 대시보드", "manager-title", help_key="manager")
 
     st.markdown('<div class="manager-section-title">오늘 작업 등록</div>', unsafe_allow_html=True)
 
@@ -4524,8 +4532,34 @@ def calculate_final_score(input_df, pred_prob, work_type, time_slot, chem_info_m
         "combined_prob": combined_prob,
         "raw_score": raw_score
     }
-def get_current_time_slot():
-    now = datetime.now()
+def get_client_datetime():
+    """
+    서버 시간 대신 접속 기기(모바일 등)의 로컬 시간을 가져온다.
+    서버가 배포된 곳과 접속 기기의 시간대/시계가 다르면 datetime.now()(서버 시간)는
+    실제 기기 시간과 어긋나므로, 브라우저의 Date 객체 값을 그대로 받아온다.
+    값이 아직 브라우저에서 도착하지 않았으면 None을 반환한다(호출부에서 서버 시간으로 대체).
+    """
+    js_now = streamlit_js_eval(
+        js_expressions="""
+            (function() {
+                var d = new Date();
+                function pad(n) { return n < 10 ? '0' + n : '' + n; }
+                return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+                    + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+            })()
+        """,
+        key="client_now",
+    )
+    if not js_now:
+        return None
+    try:
+        return datetime.strptime(js_now, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
+
+def get_current_time_slot(now=None):
+    if now is None:
+        now = datetime.now()
     current_hour = now.hour
 
     if 7 <= current_hour < 15:
@@ -4636,5 +4670,4 @@ elif st.session_state.page == "journal":
 elif st.session_state.page == "manager":
     show_manager_dashboard()
 
-open_help_if_requested()
 show_active_help_popup()
