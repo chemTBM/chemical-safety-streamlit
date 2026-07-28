@@ -8,3 +8,4 @@ openpyxl
 supabase
 docxtpl
 streamlit_js_eval
+streamlit-searchbox
