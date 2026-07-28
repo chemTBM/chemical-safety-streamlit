@@ -2,6 +2,83 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
+
+# =========================================================
+# 화학물질 관용명 → MSDS API 정식 국문명 변환표
+# 형식: "사용자가 입력할 수 있는 이름": "API 검색용 정식 국문명"
+# =========================================================
+
+CHEMICAL_ALIASES = {
+    # 알코올류
+    "메탄올": "메틸알코올",
+    "메틸알콜": "메틸알코올",
+    "메틸 알콜": "메틸알코올",
+    "메틸 알코올": "메틸알코올",
+
+    "에탄올": "에틸알코올",
+    "에틸알콜": "에틸알코올",
+    "에틸 알콜": "에틸알코올",
+    "에틸 알코올": "에틸알코올",
+
+    "이소프로판올": "이소프로필알코올",
+    "아이소프로판올": "이소프로필알코올",
+    "IPA": "이소프로필알코올",
+    "아이피에이": "이소프로필알코올",
+    "이소프로필알콜": "이소프로필알코올",
+    "자일렌": "크실렌",
+    
+
+    # 산류
+    "염산": "염화수소",
+    "빙초산": "아세트산",
+    "초산": "아세트산",
+    "식초산": "아세트산",
+    "아세트산에틸": "초산에틸",
+    "에틸렌아세테이트": "초산에틸",
+    "아세트산메틸": "초산메틸",
+    "메틸렌아세테이트": "초산메틸",
+    "불산": "불화수소",
+    "플루오르화수소": "불화수소",
+    
+
+    # 알칼리류
+    "가성소다": "수산화나트륨",
+    "가성소다액": "수산화나트륨",
+    "소다회": "탄산나트륨",
+    "가성칼리": "수산화칼륨",
+    "가성가리": "수산화칼륨",
+    "차염": "차아염소산나트륨",
+    "차염소산나트륨": "차아염소산나트륨",
+
+    # 용제류
+    "MEK": "메틸에틸케톤",
+    "엠이케이": "메틸에틸케톤",
+    "메틸에틸케톤": "메틸에틸케톤",
+
+    "MIBK": "메틸이소부틸케톤",
+    "엠아이비케이": "메틸이소부틸케톤",
+    "메틸아이소부틸케톤": "메틸이소부틸케톤",
+
+    "MC": "염화메틸렌",
+    "메틸렌클로라이드": "염화메틸렌",
+    "디클로로메탄": "염화메틸렌",
+    "ECH": "에피클로로히드린",
+    "1,2-디클로로벤젠": "o-디클로로벤젠",
+
+    # 기타 현장 사용명
+    "과산화수소수": "과산화수소",
+    "과수": "과산화수소",
+    "암모니아수": "암모니아 용액",
+    "암수": "암모니아 용액",
+    "수산화 암모늄": "암모니아 용액",
+    "포르말린": "포름알데히드",
+    "포름알린": "포름알데히드",
+    "포름산": "개미산",
+    "MDI": "메틸렌 디페닐 디이소시아네이트",
+    "디이소시안산디페닐메탄": "메틸렌 디페닐 디이소시아네이트",
+    "NMP": "1-메틸-2-피롤리디논",
+    "TDI": "톨루엔-2,4/2,6-디이소시아네이트",
+}
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -17,6 +94,7 @@ from supabase import create_client
 from io import BytesIO
 from docxtpl import DocxTemplate
 from streamlit_js_eval import streamlit_js_eval
+from streamlit_searchbox import st_searchbox
 
 # =========================
 # 1) 파일 불러오기
@@ -1869,10 +1947,11 @@ def show_work_input():
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="field-label">취급물질 입력</div>', unsafe_allow_html=True)
 
-    chemical = st.text_input(
-        "취급물질",
+    chemical = st_searchbox(
+        search_chemical_candidates,
+        key="chemical_searchbox",
         placeholder="화학물질명을 입력하세요. 예: 염산, 황산, 암모니아",
-        label_visibility="collapsed"
+        clear_on_submit=False,
     )
 
     # =========================
@@ -1884,9 +1963,11 @@ def show_work_input():
             st.warning("선택한 작업의 작업장소 정보가 없습니다. 안전관리자에게 작업정보를 확인해 주세요.")
             return
 
-        if not chemical.strip():
-            st.warning("취급물질을 입력해 주세요.")
+        if not chemical or not str(chemical).strip():
+            st.warning("취급물질을 입력하고 검색 결과에서 물질을 선택해 주세요.")
             return
+
+        chemical = resolve_chemical_alias(str(chemical).strip())
 
         work_type_map = {
             "정기작업": "ROUTINE",
@@ -4319,6 +4400,87 @@ def test_msds_api_by_cas(cas_no, service_key):
     }
     response = requests.get(url, params=params, timeout=10)
     return response.status_code, response.text
+
+
+def resolve_chemical_alias(name):
+    if not name:
+        return name
+
+    key = name.strip()
+
+    if key in CHEMICAL_ALIASES:
+        return CHEMICAL_ALIASES[key]
+
+    key_cf = key.casefold()
+    for alias, official in CHEMICAL_ALIASES.items():
+        if alias.casefold() == key_cf:
+            return official
+
+    return key
+
+
+def search_chemical_names_api(search_term, service_key, num_of_rows=10):
+    if not search_term or not search_term.strip():
+        return []
+
+    url = "https://apis.data.go.kr/B552468/msdschem/getChemList"
+    params = {
+        "serviceKey": service_key,
+        "searchWrd": search_term.strip(),
+        "searchCnd": "0",  # 국문명 검색
+        "numOfRows": str(num_of_rows),
+        "pageNo": "1"
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+
+        if response.status_code != 200:
+            return []
+
+        root = ET.fromstring(response.text)
+
+        if root.findtext(".//resultCode") != "00":
+            return []
+
+        names = []
+        for item in root.findall(".//item"):
+            chem_name_kor = item.findtext("chemNameKor")
+            if chem_name_kor and chem_name_kor not in names:
+                names.append(chem_name_kor)
+
+        return names
+
+    except Exception:
+        return []
+
+
+def search_chemical_candidates(searchterm):
+    if not searchterm or not searchterm.strip():
+        return []
+
+    term = searchterm.strip()
+    term_cf = term.casefold()
+    candidates = []
+
+    # 1) 관용명 부분일치 → 정식명 후보 추가 (보조 기능)
+    for alias, official in CHEMICAL_ALIASES.items():
+        if term_cf in alias.casefold() and official not in candidates:
+            candidates.append(official)
+
+    # 2) 관용명이 매칭되면 정식명으로, 아니면 입력값 그대로 MSDS API 검색
+    api_term = resolve_chemical_alias(term)
+    for name in search_chemical_names_api(api_term, SERVICE_KEY):
+        if name not in candidates:
+            candidates.append(name)
+
+    # 3) 관용명 변환이 있었던 경우, 원본 입력어로도 검색해 후보를 보강
+    if api_term != term:
+        for name in search_chemical_names_api(term, SERVICE_KEY):
+            if name not in candidates:
+                candidates.append(name)
+
+    return candidates[:15]
 
 
 def get_chemid_by_name(chem_name, service_key):
