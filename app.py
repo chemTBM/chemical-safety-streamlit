@@ -88,6 +88,8 @@ from pathlib import Path
 import textwrap
 import streamlit.components.v1 as components
 import re
+import base64
+from PIL import Image
 from difflib import SequenceMatcher
 from openai import OpenAI
 from supabase import create_client
@@ -1272,6 +1274,187 @@ def _close_help_popup():
     st.session_state.active_help_page = None
 
 
+def _image_to_data_uri(path):
+    ext = path.suffix.lower().lstrip(".")
+    mime = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }.get(ext, "image/png")
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{data}"
+
+
+def render_help_carousel(image_list):
+    """
+    이전/다음 버튼 대신 좌우 스와이프(모바일 터치)/드래그(데스크톱 마우스)로
+    넘기는 캐러셀. 순수 Streamlit 위젯으로는 터치 제스처를 잡을 수 없어
+    st.iframe으로 HTML/CSS/JS를 직접 삽입한다
+    (components.html은 이 Streamlit 버전에서 사실상 동작하지 않아 st.iframe 사용).
+    """
+    paths = []
+    for name in image_list:
+        path = get_help_image_path(name)
+        if path is None:
+            st.error(f"안내 이미지를 찾을 수 없습니다: {name}")
+            st.caption(f"확인 경로: {HELP_INFO_DIR}")
+            continue
+        paths.append(path)
+
+    if not paths:
+        return
+
+    # 이미지들 중 가장 세로로 긴 비율에 맞춰 슬라이드 높이를 잡는다.
+    # (object-fit: contain으로 넣으므로 비율이 다른 이미지도 잘리지 않는다)
+    max_ratio = 0.0
+    for path in paths:
+        with Image.open(path) as im:
+            w, h = im.size
+            if w > 0:
+                max_ratio = max(max_ratio, h / w)
+
+    slide_width = 620  # st.dialog(width="large") 내부 실사용 폭 근사값
+    slide_height = int(slide_width * max_ratio) if max_ratio > 0 else 420
+    slide_height = max(240, min(slide_height, 620))
+
+    slides_html = "".join(
+        f'<div class="hc-slide"><img src="{_image_to_data_uri(path)}" /></div>'
+        for path in paths
+    )
+    dots_html = "".join(
+        f'<span class="hc-dot{" active" if i == 0 else ""}"></span>'
+        for i in range(len(paths))
+    )
+
+    html = f"""
+<style>
+  html, body {{ margin:0; padding:0; }}
+  .hc-wrap {{ font-family: -apple-system, "Malgun Gothic", sans-serif; }}
+  .hc-track {{
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      cursor: grab;
+      user-select: none;
+      border-radius: 12px;
+      background: #f1f5f9;
+  }}
+  .hc-track::-webkit-scrollbar {{ display: none; }}
+  .hc-track.dragging {{ cursor: grabbing; scroll-snap-type: none; }}
+  .hc-slide {{
+      flex: 0 0 100%;
+      scroll-snap-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: {slide_height}px;
+  }}
+  .hc-slide img {{
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+      border-radius: 12px;
+  }}
+  .hc-dots {{
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 12px;
+  }}
+  .hc-dot {{
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #cbd2dc;
+      transition: background 0.15s, transform 0.15s;
+  }}
+  .hc-dot.active {{
+      background: #2170e4;
+      transform: scale(1.25);
+  }}
+</style>
+<div class="hc-wrap">
+  <div class="hc-track" id="hcTrack">
+    {slides_html}
+  </div>
+  <div class="hc-dots" id="hcDots">
+    {dots_html}
+  </div>
+</div>
+<script>
+(function() {{
+  const track = document.getElementById("hcTrack");
+  const dots = document.querySelectorAll("#hcDots .hc-dot");
+  const slideCount = {len(paths)};
+
+  function setActive(idx) {{
+      dots.forEach((d, i) => d.classList.toggle("active", i === idx));
+  }}
+
+  function currentIndex() {{
+      const w = track.clientWidth || 1;
+      return Math.round(track.scrollLeft / w);
+  }}
+
+  let scrollTimer = null;
+  track.addEventListener("scroll", function() {{
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function() {{
+          setActive(Math.max(0, Math.min(slideCount - 1, currentIndex())));
+      }}, 60);
+  }});
+
+  dots.forEach((dot, i) => {{
+      dot.addEventListener("click", function() {{
+          track.scrollTo({{ left: i * track.clientWidth, behavior: "smooth" }});
+      }});
+  }});
+
+  // 데스크톱: 마우스로 드래그해도 넘어가도록.
+  // 컨테이너 폭의 50%를 기준으로 삼으면(currentIndex()) 데스크톱처럼 넓은
+  // 화면에서는 수백 px를 끌어야 다음 장으로 넘어가 버려서, 폭과 무관하게
+  // 일정 픽셀(60px)만 끌면 한 장 넘어가도록 고정 임계값을 쓴다.
+  let isDown = false;
+  let startX = 0;
+  let lastDx = 0;
+  let baseIndex = 0;
+  const DRAG_THRESHOLD = 60;
+
+  track.addEventListener("mousedown", function(e) {{
+      isDown = true;
+      track.classList.add("dragging");
+      startX = e.pageX;
+      lastDx = 0;
+      baseIndex = Math.max(0, Math.min(slideCount - 1, currentIndex()));
+  }});
+
+  window.addEventListener("mouseup", function() {{
+      if (!isDown) return;
+      isDown = false;
+      track.classList.remove("dragging");
+      let idx = baseIndex;
+      if (lastDx <= -DRAG_THRESHOLD) idx = baseIndex + 1;
+      else if (lastDx >= DRAG_THRESHOLD) idx = baseIndex - 1;
+      idx = Math.max(0, Math.min(slideCount - 1, idx));
+      track.scrollTo({{ left: idx * track.clientWidth, behavior: "smooth" }});
+  }});
+
+  window.addEventListener("mousemove", function(e) {{
+      if (!isDown) return;
+      e.preventDefault();
+      lastDx = e.pageX - startX;
+      track.scrollLeft = baseIndex * track.clientWidth - lastDx;
+  }});
+}})();
+</script>
+"""
+    st.iframe(html, height=slide_height + 40)
+
+
 @st.dialog("화면 안내", width="large", on_dismiss=_close_help_popup)
 def show_help_popup(page_key):
     image_list = HELP_IMAGES.get(page_key, [])
@@ -1280,39 +1463,7 @@ def show_help_popup(page_key):
         st.warning("이 화면에 등록된 안내 이미지가 없습니다.")
         return
 
-    slide_key = f"help_slide_{page_key}"
-
-    if slide_key not in st.session_state:
-        st.session_state[slide_key] = 0
-
-    current_idx = st.session_state[slide_key]
-    current_image_name = image_list[current_idx]
-    image_path = get_help_image_path(current_image_name)
-
-    if image_path is None:
-        st.error(f"안내 이미지를 찾을 수 없습니다: {current_image_name}")
-        st.caption(f"확인 경로: {HELP_INFO_DIR}")
-    else:
-        st.image(str(image_path), use_container_width=True)
-
-    if len(image_list) > 1:
-        col_prev, col_page, col_next = st.columns([1, 2, 1])
-
-        with col_prev:
-            if st.button("◀ 이전", use_container_width=True, key=f"help_prev_{page_key}"):
-                st.session_state[slide_key] = (current_idx - 1) % len(image_list)
-                st.rerun()
-
-        with col_page:
-            st.markdown(
-                f"<div style='text-align:center; padding-top:8px; font-weight:800;'>{current_idx + 1} / {len(image_list)}</div>",
-                unsafe_allow_html=True
-            )
-
-        with col_next:
-            if st.button("다음 ▶", use_container_width=True, key=f"help_next_{page_key}"):
-                st.session_state[slide_key] = (current_idx + 1) % len(image_list)
-                st.rerun()
+    render_help_carousel(image_list)
 
 
 def show_active_help_popup():
@@ -1350,7 +1501,6 @@ def render_topbar(topbar_key, title, title_class, back_page=None, help_key=None)
             if help_key:
                 if st.button("ℹ️", key=f"tbhelp_{topbar_key}"):
                     st.session_state.active_help_page = help_key
-                    st.session_state.pop(f"help_slide_{help_key}", None)
                     st.rerun()
 
     render_topbar_spacer()
