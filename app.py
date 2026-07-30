@@ -138,10 +138,12 @@ st.markdown("""
     background: #f1f5f9;
 }
 
-/* Streamlit 기본 여백 */
+/* Streamlit 기본 여백
+   상단 여백은 상단바(고정 헤더)가 자체 spacer로 확보하므로 여기서는
+   Streamlit 기본 헤더(높이 60px)를 가릴 정도만 최소로 잡는다. */
 .block-container {
     max-width: 480px;
-    padding-top: 3rem;
+    padding-top: 0.25rem;
     padding-bottom: 7rem;
 }
 
@@ -1100,7 +1102,7 @@ st.markdown("""
    spacer를 둬서 콘텐츠가 가려지지 않도록 한다. */
 div[class*="st-key-topbar_"] {
     position: fixed !important;
-    top: 76px !important;
+    top: 60px !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
 
@@ -1124,10 +1126,11 @@ div[class*="st-key-topbar_"] {
 }
 
 /* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가.
-   버튼(44px) + 상하 padding(10px*2) + border 기준 실제 높이(~64px)보다
-   넉넉하게 잡아서, 폰트 렌더링 차이로 살짝 커지더라도 겹치지 않게 한다. */
+   Streamlit이 topbar 컨테이너 자리에 자체적으로 예약해두는 높이가 있어
+   (실측 약 128px) 이 값과 아래 padding-top(0.25rem=4px)을 함께 고려해서
+   상단바 바로 아래에 본문이 붙도록 역산한 값이다. */
 .fixed-topbar-spacer {
-    height: 92px;
+    height: 8px;
 }
 
 /* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
