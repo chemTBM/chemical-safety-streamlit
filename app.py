@@ -1988,7 +1988,7 @@ def show_work_input():
     chemical = st_searchbox(
         search_chemical_candidates,
         key="chemical_searchbox",
-        placeholder="화학물질명을 입력하세요. 예: 염산, 황산, 암모니아",
+        placeholder="화학물질명을 입력하세요. 예: 황산",
         clear_on_submit=False,
     )
 
