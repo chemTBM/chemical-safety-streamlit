@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -285,10 +285,7 @@ div.stButton > button {
     z-index: 9999;
 }
 
-/* 하단 네비게이션 */
-.bottom-nav-spacer {
-    height: 88px;
-}
+/* 하단 네비게이션 spacer는 show_bottom_nav()에서 실제 바 높이에 맞춰 정의됨 */
 
 /* =========================
    위험도 결과 화면 전체 스타일
@@ -548,7 +545,7 @@ div.stButton > button {
 
 .plant-image-card {
     margin-top: 24px;
-    height: 180px;
+    min-height: 180px;
     border-radius: 18px;
     overflow: hidden;
     background: linear-gradient(135deg, #091426, #2170e4);
@@ -559,10 +556,6 @@ div.stButton > button {
     font-size: 14px;
     line-height: 1.5;
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
-}
-
-.bottom-nav-spacer {
-    height: 76px;
 }
 
 </style>
@@ -1099,7 +1092,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("""
 <style>
-/* Streamlit 기본 상단툴바를 피해서 앱 상단바 고정 (render_topbar()가 만드는 st.container(key="topbar_*")를 타겟) */
+/* 앱 상단바 (render_topbar()가 만드는 st.container(key="topbar_*")를 타겟)
+   position: sticky는 Streamlit의 실제 스크롤 컨테이너(section.stMain)가
+   내부적으로 중첩되어 있고 컴포넌트(검색창 등)가 마운트될 때 스스로 스크롤을
+   이동시키는 경우가 있어 고정(stuck) 동작이 깨지는 것을 확인했다. 대신
+   position: fixed를 쓰고, 아래 문서 흐름에는 실제 렌더링 높이보다 넉넉한
+   spacer를 둬서 콘텐츠가 가려지지 않도록 한다. */
 div[class*="st-key-topbar_"] {
     position: fixed !important;
     top: 76px !important;
@@ -1119,11 +1117,17 @@ div[class*="st-key-topbar_"] {
     padding: 10px 10px !important;
 
     box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+
+    /* 내부 요소가 어떤 이유로든 자기 폭을 못 줄이더라도 상단바 박스
+       밖으로 시각적으로 삐져나가지 않도록 하는 안전장치 */
+    overflow: hidden !important;
 }
 
-/* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가 */
+/* 상단바가 fixed라서 본문이 가려지지 않도록 여백 추가.
+   버튼(44px) + 상하 padding(10px*2) + border 기준 실제 높이(~64px)보다
+   넉넉하게 잡아서, 폰트 렌더링 차이로 살짝 커지더라도 겹치지 않게 한다. */
 .fixed-topbar-spacer {
-    height: 5px;
+    height: 92px;
 }
 
 /* 관리자 대시보드 상단바는 기존 어두운 디자인 유지 */
@@ -1133,12 +1137,15 @@ div[class*="st-key-topbar_manager"] {
     border-radius: 0 0 18px 18px !important;
 }
 
-/* 뒤로가기(←) / 안내(ℹ️) 버튼을 동그란 아이콘처럼 보이도록 스타일링 */
+/* 뒤로가기(←) / 안내(ℹ️) 버튼을 동그란 아이콘처럼 보이도록 스타일링
+   (44px = 모바일 터치 권장 최소 크기) */
 div[class*="st-key-tbback_"] button,
 div[class*="st-key-tbhelp_"] button {
-    width: 36px !important;
-    height: 36px !important;
-    min-height: 36px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    flex-shrink: 0 !important;
     padding: 0 !important;
     border-radius: 999px !important;
     background: #f0edef !important;
@@ -1154,15 +1161,46 @@ div[class*="st-key-tbhelp_manager"] button {
     color: white !important;
 }
 
+/* Streamlit의 st.columns는 기본적으로 좁은 화면(약 640px 이하)에서
+   세로로 쌓이도록 되어 있다. 상단바(←/제목/ℹ️)는 항상 한 줄로 유지되어야
+   하므로 이 자동 stack 동작을 명시적으로 막는다. */
+div[class*="st-key-topbar_"] div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+}
+
+/* 컬럼 비율(예: [1, 6, 1])은 Streamlit이 inline flex-basis로 강제하기 때문에
+   단순 min-width:0/flex-shrink 재정의만으로는 좁은 화면에서 제목이 안내 버튼을
+   밀어내는 문제가 해결되지 않는다. 버튼이 들어있는 컬럼(뒤로가기/안내)은
+   내용 크기만큼만 차지하고, 버튼이 없는 컬럼(제목)만 남은 공간을 갖도록
+   구조적으로 구분해서 강제한다. */
+div[class*="st-key-topbar_"] [data-testid="stColumn"]:has(button) {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+
+div[class*="st-key-topbar_"] [data-testid="stColumn"]:not(:has(button)) {
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+
+div[class*="st-key-topbar_"] [data-testid="stColumn"]:not(:has(button)) * {
+    min-width: 0 !important;
+}
+
+/* overflow:hidden을 제목 텍스트 바로 위 요소에 걸면 한글 글자(받침)가
+   세로로 잘려 다른 글자처럼 보이는 렌더링 문제가 있어, 여기서는 줄바꿈만
+   막고(nowrap) 실제 클리핑은 상단바 컨테이너 바깥쪽 overflow:hidden에 맡긴다. */
+div[class*="st-key-topbar_"] [data-testid="stMarkdownContainer"] > div {
+    white-space: nowrap;
+}
+
 /* 모바일에서 살짝 조정 */
 @media (max-width: 640px) {
     div[class*="st-key-topbar_"] {
-        top: 76px !important;
-        width: calc(100% - 22px) !important;
-    }
-
-    .fixed-topbar-spacer {
-        height: 5px;
+        width: 100% !important;
+        border-radius: 0 !important;
     }
 }
 </style>
@@ -2109,13 +2147,24 @@ div[class*="st-key-bottomnavbar"] {
     padding: 6px !important;
 }
 
+/* 하단 네비게이션도 4개 아이콘이 항상 한 줄로 유지되어야 한다 */
+div[class*="st-key-bottomnavbar"] div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+}
+
+div[class*="st-key-bottomnavbar"] [data-testid="stColumn"] {
+    min-width: 0 !important;
+    width: auto !important;
+    flex-shrink: 1 !important;
+}
+
 div[class*="st-key-navbtn_"] button {
     border: none !important;
     background: transparent !important;
     color: #8a8f98 !important;
     font-size: 26px !important;
     font-weight: 900 !important;
-    height: 52px !important;
+    min-height: 52px !important;
     width: 100% !important;
     border-radius: 16px !important;
 }
