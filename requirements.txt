@@ -6,6 +6,7 @@ joblib
 requests
 openpyxl
 supabase
+openai==2.36.0
 docxtpl
 streamlit_js_eval
 streamlit-searchbox
