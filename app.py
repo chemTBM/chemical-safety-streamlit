@@ -437,6 +437,24 @@ div.stButton > button {
     color: #1b1b1d;
 }
 
+/* 중점위험요인/대책 카드(버튼) 선택 상태: 배경은 그대로 흰색 유지, 테두리만 강조 */
+div[data-testid="stButton"] button[kind="primary"] {
+    background-color: #ffffff !important;
+    color: #1b1b1d !important;
+    border: 3px solid #2170e4 !important;
+    box-shadow: 0 0 0 1px rgba(33, 112, 228, 0.15) !important;
+}
+
+div[data-testid="stButton"] button[kind="primary"]:hover {
+    background-color: #f5f9ff !important;
+    color: #1b1b1d !important;
+    border-color: #2170e4 !important;
+}
+
+div[data-testid="stButton"] button[kind="primary"] p {
+    color: #1b1b1d !important;
+}
+
 .incident-placeholder {
     background: linear-gradient(135deg, #091426, #1e293b);
     color: white;
@@ -534,6 +552,65 @@ div.stButton > button {
     font-weight: 800;
     color: #45474c;
     margin-bottom: 8px;
+}
+
+.wheel-picker-label {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #45474c;
+    margin-bottom: 6px;
+}
+
+.wheel-picker-wrap {
+    position: relative;
+    height: 132px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.wheel-picker-highlight {
+    position: absolute;
+    top: 44px;
+    left: 0;
+    right: 0;
+    height: 44px;
+    border-top: 2px solid #2170e4;
+    border-bottom: 2px solid #2170e4;
+    background: rgba(33, 112, 228, 0.08);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.wheel-picker-scroll {
+    height: 132px;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+}
+
+.wheel-picker-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.wheel-picker-item {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #45474c;
+}
+
+.wheel-picker-pad {
+    height: 44px;
 }
 
 .selected-chip {
@@ -4517,6 +4594,73 @@ def show_journal():
 
     show_bottom_nav()
 
+def render_wheel_picker(dom_id, min_val, max_val, current_value, js_key):
+    """
+    시/분처럼 정수 범위를 세로 휠 피커(숫자 목록이 세로로 스크롤되며 스냅되는 방식)로 선택한다.
+    Streamlit에는 이런 위젯이 내장되어 있지 않아서, CSS scroll-snap으로 스크롤/스냅 동작을
+    구현하고 streamlit_js_eval로 parent 문서(실제 앱 페이지)의 스크롤 위치를 읽어와 값으로 바꾼다.
+    스크롤 리스너는 parent 문서의 DOM에 직접 붙기 때문에, JS 표현식 문자열이 매번 바뀌면
+    streamlit_js_eval이 rerun마다 재평가·재전송을 반복해 rerun이 끝없이 이어지는 문제가 있었다.
+    그래서 초기 스크롤 위치(default_idx)를 세션에 한 번만 고정해 표현식 문자열을 항상 동일하게
+    유지하고, 최초 1회만 실제로 평가되도록 한다(이후에는 리스너가 붙어 있는 한 스크롤 이벤트로만
+    값이 갱신된다).
+    """
+    item_height = 44
+    items_html = "".join(
+        f'<div class="wheel-picker-item">{v:02d}</div>' for v in range(min_val, max_val + 1)
+    )
+
+    st.markdown(
+        f"""
+<div class="wheel-picker-wrap">
+    <div class="wheel-picker-highlight"></div>
+    <div class="wheel-picker-scroll" id="{dom_id}">
+        <div class="wheel-picker-pad"></div>
+        {items_html}
+        <div class="wheel-picker-pad"></div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True
+    )
+
+    init_key = f"_{js_key}_initial_idx"
+    if init_key not in st.session_state:
+        st.session_state[init_key] = max(0, min(max_val - min_val, current_value - min_val))
+    default_idx = st.session_state[init_key]
+    max_idx = max_val - min_val
+
+    js = f"""
+    (function() {{
+        var el = parent.document.getElementById('{dom_id}');
+        if (!el) return 'no-el';
+        if (!el.dataset.wheelInit) {{
+            el.dataset.wheelInit = '1';
+            el.scrollTop = {default_idx} * {item_height};
+            var timer = null;
+            el.addEventListener('scroll', function() {{
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(function() {{
+                    var idx = Math.round(el.scrollTop / {item_height});
+                    var clamped = Math.max(0, Math.min({max_idx}, idx));
+                    el.scrollTo({{top: clamped * {item_height}, behavior: 'smooth'}});
+                    sendDataToPython({{value: clamped, dataType: 'json'}});
+                }}, 180);
+            }});
+        }}
+        return 'attached';
+    }})()
+    """
+
+    scrolled_idx = streamlit_js_eval(js_expressions=js, key=js_key)
+
+    if isinstance(scrolled_idx, (int, float)):
+        new_value = min_val + int(scrolled_idx)
+        if min_val <= new_value <= max_val:
+            return new_value
+
+    return current_value
+
 def show_task_create():
 
     if not st.session_state.get("team_id"):
@@ -4585,20 +4729,22 @@ def show_task_create():
     col_hour, col_minute = st.columns(2)
 
     with col_hour:
-        tc_start_hour = st.slider(
-            "시",
-            0, 23,
-            st.session_state.get("tc_start_hour", _now_local.hour),
-            key="tc_start_hour"
+        st.markdown('<div class="wheel-picker-label">시</div>', unsafe_allow_html=True)
+        tc_start_hour = render_wheel_picker(
+            "tc-hour-wheel", 0, 23,
+            st.session_state.get("tc_start_hour_val", _now_local.hour),
+            "tc_start_hour_wheel"
         )
+        st.session_state["tc_start_hour_val"] = tc_start_hour
 
     with col_minute:
-        tc_start_minute = st.slider(
-            "분",
-            0, 59,
-            st.session_state.get("tc_start_minute", _now_local.minute),
-            key="tc_start_minute"
+        st.markdown('<div class="wheel-picker-label">분</div>', unsafe_allow_html=True)
+        tc_start_minute = render_wheel_picker(
+            "tc-minute-wheel", 0, 59,
+            st.session_state.get("tc_start_minute_val", _now_local.minute),
+            "tc_start_minute_wheel"
         )
+        st.session_state["tc_start_minute_val"] = tc_start_minute
 
     tc_start_time = dt_time(tc_start_hour, tc_start_minute)
 
