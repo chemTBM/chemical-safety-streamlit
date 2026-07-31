@@ -4054,7 +4054,25 @@ def show_checklist():
 
     show_bottom_nav()
 
+def _close_journal_success_modal():
+    st.session_state.show_journal_success_modal = False
+
+
+@st.dialog("제출 완료", on_dismiss=_close_journal_success_modal)
+def show_journal_success_popup():
+    st.write("작업일지가 제출되었습니다.")
+
+    if st.button("확인", use_container_width=True):
+        st.session_state.show_journal_success_modal = False
+        st.session_state.page = "login"
+        st.query_params.clear()
+        st.rerun()
+
+
 def show_journal():
+
+    if st.session_state.get("show_journal_success_modal"):
+        show_journal_success_popup()
 
     render_topbar("journal", "Safety TBM", "journal-app-title", back_page="checklist", help_key="journal")
 
@@ -4263,7 +4281,8 @@ def show_journal():
 
         st.session_state.journal_submitted = True
 
-        st.success("작업일지가 제출되었습니다.")
+        st.session_state.show_journal_success_modal = True
+        st.rerun()
 
     show_bottom_nav()
 
