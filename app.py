@@ -455,6 +455,27 @@ div[data-testid="stButton"] button[kind="primary"] p {
     color: #1b1b1d !important;
 }
 
+/* 중점위험요인/대책 카드(버튼) 선택 안 된 상태: 앱 기본 버튼 색(파란 배경)을 덮어써서
+   흰 배경 + 검은 글씨로 표시한다. Streamlit이 각 위젯을 st-key-{key} 클래스가 붙은
+   stElementContainer로 감싸주므로, 버튼의 key 접두사로 카드 버튼만 정확히 골라낸다. */
+div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"],
+div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"] {
+    background-color: #ffffff !important;
+    color: #1b1b1d !important;
+    border: 1px solid #d7d9e0 !important;
+}
+
+div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"] p,
+div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"] p {
+    color: #1b1b1d !important;
+}
+
+div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"]:hover,
+div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover {
+    background-color: #f7f8fa !important;
+    border-color: #b9bcc6 !important;
+}
+
 .incident-placeholder {
     background: linear-gradient(135deg, #091426, #1e293b);
     color: white;
@@ -3929,7 +3950,7 @@ def render_selectable_hazard_cards(risk_items, session_key):
     카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
-<div class="result-card-header">
+<div class="result-card-header hazard-section-marker">
     <div class="result-card-icon">🧠</div>
     <div class="result-card-title">AI 분석 주요 위험요인 (탭하여 중점위험요인 선택)</div>
 </div>
@@ -3959,7 +3980,7 @@ def render_selectable_measure_cards(measure_items, session_key):
     카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
-<div class="result-card-header">
+<div class="result-card-header measure-section-marker">
     <div class="result-card-icon">🛡️</div>
     <div class="result-card-title">안전 및 사고 예방대책 (탭하여 대책 선택)</div>
 </div>
