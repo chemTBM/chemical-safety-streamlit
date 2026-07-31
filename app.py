@@ -3848,13 +3848,13 @@ def render_similar_accident_card(similar_accident_text):
 
 def render_selectable_hazard_cards(risk_items, session_key):
     """
-    "AI 분석 주요 위험요인" 카드 각각에 선택 버튼을 붙여서 렌더링한다 (안전관리자 전용).
-    선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
+    "AI 분석 주요 위험요인" 카드 자체를 버튼으로 만들어 렌더링한다 (안전관리자 전용).
+    카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
 <div class="result-card-header">
     <div class="result-card-icon">🧠</div>
-    <div class="result-card-title">AI 분석 주요 위험요인 (중점위험요인 선택)</div>
+    <div class="result-card-title">AI 분석 주요 위험요인 (탭하여 중점위험요인 선택)</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -3863,34 +3863,28 @@ def render_selectable_hazard_cards(risk_items, session_key):
     for i, item in enumerate(risk_items):
         is_selected = (selected_idx == i)
 
-        with st.container(border=True):
-            st.markdown(
-                f'<div class="message-item"><div class="message-num">{i + 1:02d}</div>'
-                f'<div class="message-text">{item}</div></div>',
-                unsafe_allow_html=True
-            )
+        check_prefix = "✅ " if is_selected else ""
+        label = f"{check_prefix}:red[**{i + 1:02d}**]  {item}"
 
-            btn_label = "✅ 중점위험요인으로 선택됨" if is_selected else "이 항목을 중점위험요인으로 선택"
-
-            if st.button(
-                btn_label,
-                key=f"{session_key}_btn_{i}",
-                use_container_width=True,
-                type="primary" if is_selected else "secondary"
-            ):
-                st.session_state[session_key] = i
-                st.rerun()
+        if st.button(
+            label,
+            key=f"{session_key}_btn_{i}",
+            use_container_width=True,
+            type="primary" if is_selected else "secondary"
+        ):
+            st.session_state[session_key] = None if is_selected else i
+            st.rerun()
 
 
 def render_selectable_measure_cards(measure_items, session_key):
     """
-    "안전 및 사고 예방대책" 카드 각각에 선택 버튼을 붙여서 렌더링한다 (안전관리자 전용).
-    선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
+    "안전 및 사고 예방대책" 카드 자체를 버튼으로 만들어 렌더링한다 (안전관리자 전용).
+    카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
 <div class="result-card-header">
     <div class="result-card-icon">🛡️</div>
-    <div class="result-card-title">안전 및 사고 예방대책 (대책 선택)</div>
+    <div class="result-card-title">안전 및 사고 예방대책 (탭하여 대책 선택)</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -3899,23 +3893,17 @@ def render_selectable_measure_cards(measure_items, session_key):
     for i, item in enumerate(measure_items):
         is_selected = (selected_idx == i)
 
-        with st.container(border=True):
-            st.markdown(
-                f'<div class="measure-item"><div class="measure-check">✓</div>'
-                f'<div class="measure-text">{item}</div></div>',
-                unsafe_allow_html=True
-            )
+        check_prefix = "✅ " if is_selected else ""
+        label = f"{check_prefix}:blue[**✓**]  {item}"
 
-            btn_label = "✅ 대책으로 선택됨" if is_selected else "이 항목을 대책으로 선택"
-
-            if st.button(
-                btn_label,
-                key=f"{session_key}_btn_{i}",
-                use_container_width=True,
-                type="primary" if is_selected else "secondary"
-            ):
-                st.session_state[session_key] = i
-                st.rerun()
+        if st.button(
+            label,
+            key=f"{session_key}_btn_{i}",
+            use_container_width=True,
+            type="primary" if is_selected else "secondary"
+        ):
+            st.session_state[session_key] = None if is_selected else i
+            st.rerun()
 
 
 def run_ai_hazard_analysis(result, current_month=None):
