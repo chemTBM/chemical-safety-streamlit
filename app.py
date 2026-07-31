@@ -1856,9 +1856,33 @@ def show_login():
             if st.session_state.work_data.get("TBM리더여부", False):
                 st.session_state.work_data["TBM시작시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+            # 안전관리자가 "오늘 작업 입력" 화면에서 미리 분석해 둔 위험도 결과를
+            # 그대로 가져와 보여준다 (작업자가 다시 분석하지 않음).
+            st.session_state.result = {
+                "score": selected_task.get("risk_score"),
+                "level": selected_task.get("risk_level"),
+                "chem_name": selected_task.get("chem_name"),
+                "chem_id": selected_task.get("chem_id"),
+                "작업유형": selected_task.get("work_type_display"),
+                "작업유형_모델값": selected_task.get("work_type_code"),
+                "취급물질": selected_task.get("material_name"),
+                "작업시간": selected_task.get("start_time"),
+                "작업시간대": selected_task.get("time_slot"),
+                "similar_accident_text": selected_task.get("similar_accident_text", ""),
+                "task_id": selected_task.get("id", ""),
+            }
+            st.session_state.work_data["작업유형"] = selected_task.get("work_type_display", "")
+            st.session_state.work_data["취급물질"] = selected_task.get("material_name", "")
+            st.session_state.work_data["main_hazard_1"] = selected_task.get("main_hazard_1", "")
+            st.session_state.work_data["main_hazard_2"] = selected_task.get("main_hazard_2", "")
+            st.session_state.work_data["main_hazard_3"] = selected_task.get("main_hazard_3", "")
+            st.session_state.work_data["safety_measure_1"] = selected_task.get("safety_measure_1", "")
+            st.session_state.work_data["safety_measure_2"] = selected_task.get("safety_measure_2", "")
+            st.session_state.work_data["safety_measure_3"] = selected_task.get("safety_measure_3", "")
+
             st.query_params.clear()
 
-            st.session_state.page = "input"
+            st.session_state.page = "task_info"
             st.rerun()
 
         else:
@@ -2061,6 +2085,60 @@ def show_create_team():
                     st.write(str(e))
                 return
 
+def run_risk_scoring(chemical, work_type, time_slot):
+    """
+    화학물질명/작업유형코드/시간대를 받아 위험도 점수를 계산한다.
+    작업자 모드(show_work_input)와 안전관리자 모드(show_task_create)가 공유해서 쓴다.
+    실패 시 (None, 에러메시지)를 반환한다.
+    """
+    chem_id, chem_name, err = get_chemid_by_name(
+        chemical,
+        SERVICE_KEY
+    )
+
+    if err:
+        return None, err
+
+    status_code, detail_text = get_hazard_by_chemid(
+        chem_id,
+        SERVICE_KEY
+    )
+
+    if status_code != 200:
+        return None, f"상세 위해성 API 호출 실패: {status_code}"
+
+    classification_text = extract_classification_text(detail_text)
+
+    hazard_scores = map_hazard_scores_by_excel(
+        classification_text,
+        mapping_df
+    )
+
+    input_df = make_input_data(work_type, time_slot)
+    pred_prob = model.predict_proba(input_df)[0][1]
+
+    score, level, detail = calculate_final_score(
+        input_df=input_df,
+        pred_prob=pred_prob,
+        work_type=work_type,
+        time_slot=time_slot,
+        chem_info_missing=0
+    )
+
+    result = {
+        "score": score,
+        "level": level,
+        "detail": detail,
+        "input_df": input_df,
+        "chem_name": chem_name,
+        "chem_id": chem_id,
+        "hazard_scores": hazard_scores,
+        "classification_text": classification_text,
+    }
+
+    return result, None
+
+
 def show_work_input():
 
     # =========================
@@ -2188,56 +2266,19 @@ def show_work_input():
         })
 
         try:
-            chem_id, chem_name, err = get_chemid_by_name(
-                chemical,
-                SERVICE_KEY
-            )
+            result, err = run_risk_scoring(chemical, work_type, time_slot)
 
             if err:
                 st.error(err)
                 return
 
-            status_code, detail_text = get_hazard_by_chemid(
-                chem_id,
-                SERVICE_KEY
-            )
-
-            if status_code != 200:
-                st.error(f"상세 위해성 API 호출 실패: {status_code}")
-                return
-
-            classification_text = extract_classification_text(detail_text)
-
-            hazard_scores = map_hazard_scores_by_excel(
-                classification_text,
-                mapping_df
-            )
-
-            st.session_state.hazard_scores = hazard_scores
-            st.session_state.chem_id = chem_id
-            st.session_state.chem_name = chem_name
-            st.session_state.classification_text = classification_text
-
-            input_df = make_input_data(work_type, time_slot)
-            pred_prob = model.predict_proba(input_df)[0][1]
-
-            score, level, detail = calculate_final_score(
-                input_df=input_df,
-                pred_prob=pred_prob,
-                work_type=work_type,
-                time_slot=time_slot,
-                chem_info_missing=0
-            )
+            st.session_state.hazard_scores = result["hazard_scores"]
+            st.session_state.chem_id = result["chem_id"]
+            st.session_state.chem_name = result["chem_name"]
+            st.session_state.classification_text = result["classification_text"]
 
             st.session_state.result = {
-                "score": score,
-                "level": level,
-                "detail": detail,
-                "input_df": input_df,
-                "chem_name": chem_name,
-                "chem_id": chem_id,
-                "hazard_scores": hazard_scores,
-                "classification_text": classification_text,
+                **result,
                 "작업명": work_name,
                 "작업내용": work_content,
                 "작업장소": work_location,
@@ -2251,7 +2292,7 @@ def show_work_input():
                 "task_id": st.session_state.work_data.get("task_id", "")
             }
 
-            st.session_state.risk_score = score
+            st.session_state.risk_score = result["score"]
             st.session_state.page = "result"
             st.rerun()
 
@@ -2768,7 +2809,25 @@ def create_work_task(
     scheduled_time,
     tbm_place,
     assigned_workers,
-    risk_assessment_done=True
+    risk_assessment_done=True,
+    work_type_code="",
+    work_type_display="",
+    start_time="",
+    time_slot="",
+    material_name="",
+    chem_id="",
+    chem_name="",
+    risk_score=None,
+    risk_level="",
+    main_hazard_1="",
+    main_hazard_2="",
+    main_hazard_3="",
+    safety_measure_1="",
+    safety_measure_2="",
+    safety_measure_3="",
+    selected_hazard="",
+    selected_measure="",
+    similar_accident_text=""
 ):
     data = {
         "team_id": team_id,
@@ -2780,7 +2839,25 @@ def create_work_task(
         "scheduled_time": scheduled_time,
         "tbm_place": tbm_place,
         "assigned_workers": assigned_workers,
-        "risk_assessment_done": risk_assessment_done
+        "risk_assessment_done": risk_assessment_done,
+        "work_type_code": work_type_code,
+        "work_type_display": work_type_display,
+        "start_time": start_time,
+        "time_slot": time_slot,
+        "material_name": material_name,
+        "chem_id": chem_id,
+        "chem_name": chem_name,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "main_hazard_1": main_hazard_1,
+        "main_hazard_2": main_hazard_2,
+        "main_hazard_3": main_hazard_3,
+        "safety_measure_1": safety_measure_1,
+        "safety_measure_2": safety_measure_2,
+        "safety_measure_3": safety_measure_3,
+        "selected_hazard": selected_hazard,
+        "selected_measure": selected_measure,
+        "similar_accident_text": similar_accident_text
     }
 
     result = (
@@ -3061,13 +3138,15 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
         "leader_potition": leader_log.get("leader_position", "") if leader_log else "",
         "leader_name": leader_log.get("leader_name", "") if leader_log else "",
 
-        "main_hazard_1": leader_log.get("main_hazard_1", "") if leader_log else "",
-        "main_hazard_2": leader_log.get("main_hazard_2", "") if leader_log else "",
-        "main_hazard_3": leader_log.get("main_hazard_3", "") if leader_log else "",
+        # 위험요인/안전대책은 이제 작업자별이 아니라 안전관리자가 "오늘 작업 입력"에서
+        # 한 번 분석해 둔 값(work_tasks)을 그대로 쓴다.
+        "main_hazard_1": task.get("main_hazard_1", ""),
+        "main_hazard_2": task.get("main_hazard_2", ""),
+        "main_hazard_3": task.get("main_hazard_3", ""),
 
-        "safety_measure_1": leader_log.get("safety_measure_1", "") if leader_log else "",
-        "safety_measure_2": leader_log.get("safety_measure_2", "") if leader_log else "",
-        "safety_measure_3": leader_log.get("safety_measure_3", "") if leader_log else "",
+        "safety_measure_1": task.get("safety_measure_1", ""),
+        "safety_measure_2": task.get("safety_measure_2", ""),
+        "safety_measure_3": task.get("safety_measure_3", ""),
     }
 
     doc.render(context)
@@ -3079,6 +3158,13 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
         _mark_checkbox(table.cell(3, 10), bool(task.get("risk_assessment_done")))
     except Exception as e:
         print("위험성평가 실시여부 표시 오류:", e)
+
+    # 중점위험요인 선정 / 대책 (안전관리자가 "오늘 작업 입력"에서 선택한 값)
+    try:
+        table.cell(8, 4).text = task.get("selected_hazard", "") or ""
+        table.cell(9, 4).text = task.get("selected_measure", "") or ""
+    except Exception as e:
+        print("중점위험요인 선정/대책 입력 오류:", e)
 
     # 작업 전 일일 안전점검 시행 결과 (작성자별 목록)
     try:
@@ -3688,27 +3774,88 @@ def render_risk_summary_card(score):
     </html>
     """
 
-    components.html(html, height=365, scrolling=False)
+    st.iframe(html, height=365)
 
-def show_risk_result():
-    if "ai_result" not in st.session_state:
-        st.session_state.ai_result = None
 
-    result = st.session_state.result
-    score = float(result["score"])
+def render_ai_hazard_cards(risk_items):
+    risk_html = ""
+    for i, item in enumerate(risk_items, start=1):
+        risk_html += f"""
+<div class="message-item">
+    <div class="message-num">{i:02d}</div>
+    <div class="message-text">{item}</div>
+</div>
+"""
 
+    html = f"""
+<div class="result-card">
+    <div class="result-card-header">
+        <div class="result-card-icon">🧠</div>
+        <div class="result-card-title">AI 분석 주요 위험요인</div>
+    </div>
+    {risk_html}
+</div>
+"""
+    st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
+
+
+def render_safety_measure_cards(measure_items):
+    measure_html = ""
+    for item in measure_items:
+        measure_html += f"""
+<div class="measure-item">
+    <div class="measure-check">✓</div>
+    <div class="measure-text">{item}</div>
+</div>
+"""
+
+    html = f"""
+<div class="result-card">
+    <div class="result-card-header">
+        <div class="result-card-icon">🛡️</div>
+        <div class="result-card-title">안전 및 사고 예방대책</div>
+    </div>
+    {measure_html}
+</div>
+"""
+    st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
+
+
+def render_similar_accident_card(similar_accident_text):
+    if similar_accident_text:
+        html = f'''
+<div class="result-card">
+    <div class="result-card-header">
+        <div class="result-card-icon">🕒</div>
+        <div class="result-card-title">유사 사고사례</div>
+    </div>
+    <div class="incident-placeholder">
+        <div class="incident-placeholder-desc">{similar_accident_text}</div>
+    </div>
+</div>
+'''
+    else:
+        html = '''
+<div class="result-card"><div class="result-card-header"><div class="result-card-icon">🕒</div><div class="result-card-title">유사 사고사례</div></div><div class="incident-placeholder"><div class="incident-placeholder-title">유사 사고사례 없음</div><div class="incident-placeholder-desc">입력한 작업유형과 물질정보를 기준으로 일치하는 사고사례를 찾지 못했습니다.</div></div></div>
+'''
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def run_ai_hazard_analysis(result):
+    """
+    위험도 계산 결과(result)를 바탕으로 AI 위험요인/안전대책/유사사고 텍스트를 생성한다.
+    작업자 모드(show_risk_result)와 안전관리자 모드(show_task_create)가 공유해서 쓴다.
+    """
     material_risk_items, work_risk_items, material_measure_items, work_measure_items = get_risk_and_measure_messages(result)
 
     similar_accident, match_level = find_similar_accident(result)
 
     if similar_accident is not None:
-
         accident_date = similar_accident.get("date", "")
         accident_date_text = pd.to_datetime(accident_date).strftime("%Y-%m-%d")
 
         sido = str(similar_accident.get("도", "")).strip()
         sigungu = str(similar_accident.get("시군", "")).strip()
-
         location_text = f"{sido} {sigungu}"
 
         accident_work_type = str(similar_accident.get("작업유형", "-")).strip()
@@ -3723,45 +3870,63 @@ def show_risk_result():
     사고내용: {accident_content}
     인명피해: {casualty_text}
     """
-
     else:
         similar_text = "유사사고 정보 없음"
 
-    if st.session_state.ai_result is None:
+    ai_result = generate_ai_text(
+        material_risk_items,
+        work_risk_items,
+        material_measure_items,
+        work_measure_items,
+        similar_text
+    )
 
-        with st.spinner("AI가 TBM 내용을 생성 중입니다..."):
-
-            st.session_state.ai_result = generate_ai_text(
-                material_risk_items,
-                work_risk_items,
-                material_measure_items,
-                work_measure_items,
-                similar_text
-            )
-
-    ai_result = st.session_state.ai_result
-   
     ai_sections = parse_ai_result(ai_result)
 
     risk_items = split_ai_bullets(ai_sections["risk"])
     measure_items = split_ai_bullets(ai_sections["measure"])
     similar_accident_ai_text = ai_sections["accident"]
 
-    main_hazard_1 = risk_items[0] if len(risk_items) > 0 else ""
-    main_hazard_2 = risk_items[1] if len(risk_items) > 1 else ""
-    main_hazard_3 = risk_items[2] if len(risk_items) > 2 else ""
+    return {
+        "risk_items": risk_items,
+        "measure_items": measure_items,
+        "main_hazard_1": risk_items[0] if len(risk_items) > 0 else "",
+        "main_hazard_2": risk_items[1] if len(risk_items) > 1 else "",
+        "main_hazard_3": risk_items[2] if len(risk_items) > 2 else "",
+        "safety_measure_1": measure_items[0] if len(measure_items) > 0 else "",
+        "safety_measure_2": measure_items[1] if len(measure_items) > 1 else "",
+        "safety_measure_3": measure_items[2] if len(measure_items) > 2 else "",
+        "similar_accident": similar_accident,
+        "similar_accident_ai_text": similar_accident_ai_text if similar_accident is not None else "",
+        "match_level": match_level,
+    }
 
-    safety_measure_1 = measure_items[0] if len(measure_items) > 0 else ""
-    safety_measure_2 = measure_items[1] if len(measure_items) > 1 else ""
-    safety_measure_3 = measure_items[2] if len(measure_items) > 2 else ""
 
-    st.session_state.work_data["main_hazard_1"] = main_hazard_1
-    st.session_state.work_data["main_hazard_2"] = main_hazard_2
-    st.session_state.work_data["main_hazard_3"] = main_hazard_3
+def show_risk_result():
+    if "ai_result" not in st.session_state:
+        st.session_state.ai_result = None
 
-    st.session_state.work_data["safety_measure_1"] = safety_measure_1
-    st.session_state.work_data["safety_measure_2"] = safety_measure_2
-    st.session_state.work_data["safety_measure_3"] = safety_measure_3
+    result = st.session_state.result
+    score = float(result["score"])
+
+    if st.session_state.ai_result is None:
+        with st.spinner("AI가 TBM 내용을 생성 중입니다..."):
+            st.session_state.ai_result = run_ai_hazard_analysis(result)
+
+    ai_result = st.session_state.ai_result
+
+    risk_items = ai_result["risk_items"]
+    measure_items = ai_result["measure_items"]
+    similar_accident = ai_result["similar_accident"]
+    similar_accident_ai_text = ai_result["similar_accident_ai_text"]
+
+    st.session_state.work_data["main_hazard_1"] = ai_result["main_hazard_1"]
+    st.session_state.work_data["main_hazard_2"] = ai_result["main_hazard_2"]
+    st.session_state.work_data["main_hazard_3"] = ai_result["main_hazard_3"]
+
+    st.session_state.work_data["safety_measure_1"] = ai_result["safety_measure_1"]
+    st.session_state.work_data["safety_measure_2"] = ai_result["safety_measure_2"]
+    st.session_state.work_data["safety_measure_3"] = ai_result["safety_measure_3"]
 
     render_topbar("result", "Safety TBM", "result-app-title", back_page="input", help_key="result")
 
@@ -3783,96 +3948,11 @@ def show_risk_result():
     render_risk_summary_card(score)
 
     # =========================
-    # AI 분석 주요 위험요인 카드
+    # AI 분석 주요 위험요인 / 안전대책 / 유사사고 카드
     # =========================
-    risk_html = ""
-
-    for i, item in enumerate(risk_items, start=1):
-        risk_html += f"""
-<div class="message-item">
-    <div class="message-num">{i:02d}</div>
-    <div class="message-text">{item}</div>
-</div>
-"""
-
-    html = f"""
-<div class="result-card">
-    <div class="result-card-header">
-        <div class="result-card-icon">🧠</div>
-        <div class="result-card-title">AI 분석 주요 위험요인</div>
-    </div>
-    {risk_html}
-</div>
-"""
-
-    st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
-
-    # =========================
-    # 안전 및 사고 예방대책 카드
-    # =========================
-    measure_html = ""
-
-    for item in measure_items:
-        measure_html += f"""
-<div class="measure-item">
-    <div class="measure-check">✓</div>
-    <div class="measure-text">{item}</div>
-</div>
-"""
-
-    html = f"""
-<div class="result-card">
-    <div class="result-card-header">
-        <div class="result-card-icon">🛡️</div>
-        <div class="result-card-title">안전 및 사고 예방대책</div>
-    </div>
-    {measure_html}
-</div>
-"""
-
-    st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
-    # =========================
-    # 유사 사고사례 카드
-    # =========================
-
-
-    if similar_accident is not None:
-        accident_date = similar_accident.get("date", "")
-
-        if pd.notna(accident_date):
-            accident_date_text = pd.to_datetime(accident_date).strftime("%Y-%m-%d")
-        else:
-            accident_date_text = "-"
-
-        sido = str(similar_accident.get("도", "")).strip()
-        sigungu = str(similar_accident.get("시군", "")).strip()
-        location_text = f"{sido} {sigungu} 소재 사업장".strip()
-
-        accident_work_type = str(similar_accident.get("작업유형", "-")).strip()
-        accident_content = str(similar_accident.get("사고내용", "-")).strip()
-        casualty_text = make_casualty_text(similar_accident)
-
-        casualty_html = ""
-        if casualty_text:
-            casualty_html = f'<div class="incident-placeholder-desc"><b>인명피해:</b> {casualty_text}</div>'
-
-        html = f'''
-<div class="result-card">
-    <div class="result-card-header">
-        <div class="result-card-icon">🕒</div>
-        <div class="result-card-title">유사 사고사례</div>
-    </div>
-    <div class="incident-placeholder">
-        <div class="incident-placeholder-desc">{similar_accident_ai_text}</div>
-    </div>
-</div>
-'''
-    else:
-        html = '''
-<div class="result-card"><div class="result-card-header"><div class="result-card-icon">🕒</div><div class="result-card-title">유사 사고사례</div></div><div class="incident-placeholder"><div class="incident-placeholder-title">유사 사고사례 없음</div><div class="incident-placeholder-desc">입력한 작업유형과 물질정보를 기준으로 일치하는 사고사례를 찾지 못했습니다.</div></div></div>
-'''
-
-    st.markdown(html, unsafe_allow_html=True)
+    render_ai_hazard_cards(risk_items)
+    render_safety_measure_cards(measure_items)
+    render_similar_accident_card(similar_accident_ai_text if similar_accident is not None else "")
 
     # =========================
     # 작업물질 정보
@@ -3898,9 +3978,94 @@ def show_risk_result():
 
     show_bottom_nav()
 
+
+def show_task_info():
+    """
+    작업자가 오늘 작업을 선택하고 접속했을 때 보여주는 화면.
+    위험도를 다시 계산하지 않고, 안전관리자가 "오늘 작업 입력"에서
+    미리 분석해 둔 결과(work_tasks 테이블 값)를 그대로 보여준다.
+    """
+    render_topbar("task_info", "Safety TBM", "app-title", back_page="login", help_key="input")
+
+    work_data = st.session_state.get("work_data", {})
+    result = st.session_state.get("result", {})
+
+    work_name = work_data.get("작업명", "-")
+    work_content = work_data.get("작업내용", "-")
+    work_location = work_data.get("작업장소", "-")
+    scheduled_time = work_data.get("예정시간", "-")
+    tbm_place = work_data.get("TBM장소", "-")
+
+    st.markdown(f"""
+<div class="result-card">
+    <div class="result-card-header">
+        <div class="result-card-icon">📋</div>
+        <div class="result-card-title">선택한 작업 정보</div>
+    </div>
+    <div class="message-text">
+        <b>작업명</b> : {work_name}<br>
+        <b>작업내용</b> : {work_content}<br>
+        <b>작업장소</b> : {work_location}<br>
+        <b>예정시간</b> : {scheduled_time}<br>
+        <b>TBM 장소</b> : {tbm_place}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    score = result.get("score")
+
+    if score is not None:
+        st.markdown("""
+<div class="result-report-label">RISK ANALYSIS REPORT</div>
+<div class="result-title">오늘의 작업 위험도는</div>
+<div class="result-subtitle">
+    안전관리자가 사전에 분석한 오늘 작업의 위험수준입니다.
+</div>
+""", unsafe_allow_html=True)
+
+        render_risk_summary_card(float(score))
+
+        risk_items = [
+            h for h in (
+                work_data.get("main_hazard_1", ""),
+                work_data.get("main_hazard_2", ""),
+                work_data.get("main_hazard_3", "")
+            ) if h
+        ]
+        measure_items = [
+            m for m in (
+                work_data.get("safety_measure_1", ""),
+                work_data.get("safety_measure_2", ""),
+                work_data.get("safety_measure_3", "")
+            ) if m
+        ]
+
+        render_ai_hazard_cards(risk_items)
+        render_safety_measure_cards(measure_items)
+        render_similar_accident_card(result.get("similar_accident_text", ""))
+
+        if result.get("chem_name"):
+            st.markdown(
+                f"""
+<div class="result-info-caption">
+    작업물질: {result['chem_name']} / CHEMID: {result.get('chem_id', '-')}
+</div>
+""",
+                unsafe_allow_html=True
+            )
+    else:
+        st.warning("안전관리자가 아직 이 작업의 위험도 분석을 등록하지 않았습니다. 안전관리자에게 확인해 주세요.")
+
+    if st.button("☑️ TBM 체크리스트 확인", use_container_width=True):
+        st.session_state.page = "checklist"
+        st.rerun()
+
+    show_bottom_nav()
+
+
 def show_checklist():
 
-    render_topbar("checklist", "Checklist", "checklist-app-title", back_page="result", help_key="checklist")
+    render_topbar("checklist", "Checklist", "checklist-app-title", back_page="task_info", help_key="checklist")
 
     work_data = st.session_state.get("work_data", {})
     worker_name = work_data.get("작업자명", "미입력")
@@ -4286,6 +4451,270 @@ def show_journal():
 
     show_bottom_nav()
 
+def show_task_create():
+
+    if not st.session_state.get("team_id"):
+        st.warning("팀 접속 정보가 없습니다. 작업팀 접속 화면에서 다시 접속해 주세요.")
+
+        if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
+            st.session_state.page = "team_access"
+            st.query_params.clear()
+            st.rerun()
+
+        return
+
+    render_topbar("task_create", "오늘 작업 입력", "manager-title", back_page="manager", help_key="manager")
+
+    workers = get_team_workers(st.session_state.get("team_id", ""))
+
+    st.markdown('<div class="manager-section-title">작업 기본정보</div>', unsafe_allow_html=True)
+
+    tc_work_name = st.text_input(
+        "작업명",
+        placeholder="예: 배관 플랜지 교체 작업",
+        key="tc_work_name"
+    )
+
+    tc_work_content = st.text_area(
+        "작업내용",
+        placeholder="예: 노후 배관 플랜지 분리, 가스켓 교체 및 체결 작업",
+        height=100,
+        key="tc_work_content"
+    )
+
+    tc_work_location = st.text_input(
+        "작업장소",
+        placeholder="예: 2공장 반응기실",
+        key="tc_work_location"
+    )
+
+    tc_tbm_place = st.text_input(
+        "TBM 장소",
+        placeholder="예: 현장 작업구역 앞",
+        key="tc_tbm_place"
+    )
+
+    st.markdown('<div class="manager-section-title">위험도 분석용 정보</div>', unsafe_allow_html=True)
+
+    work_type_options = [
+        "정기작업",
+        "비작업(순찰·경비)",
+        "유지보수",
+        "화기작업",
+        "시운전·정지",
+        "세척작업"
+    ]
+
+    tc_work_type_display = st.selectbox(
+        "작업 유형",
+        work_type_options,
+        key="tc_work_type"
+    )
+
+    tc_start_time = st.time_input(
+        "작업 시작 시간",
+        value=datetime.now().time(),
+        key="tc_start_time"
+    )
+
+    tc_chemical = st_searchbox(
+        search_chemical_candidates,
+        key="tc_chemical_searchbox",
+        placeholder="화학물질명을 입력하세요. 예: 황산",
+        clear_on_submit=False,
+    )
+
+    tc_risk_assessment_done = st.checkbox(
+        "위험성평가 실시",
+        value=True,
+        key="tc_risk_assessment_done"
+    )
+
+    tc_assigned_workers = st.multiselect(
+        "작업자 선택",
+        workers,
+        key="tc_assigned_workers"
+    )
+
+    work_type_map = {
+        "정기작업": "ROUTINE",
+        "비작업(순찰·경비)": "IDLE",
+        "유지보수": "MAINTENANCE",
+        "화기작업": "HOT_WORK",
+        "시운전·정지": "STARTUP_SHUTDOWN",
+        "세척작업": "CLEANING"
+    }
+
+    if st.button("⚠️ 위험도 분석하기", key="tc_analyze_btn", use_container_width=True):
+
+        if not tc_work_name.strip():
+            st.warning("작업명을 입력해 주세요.")
+            return
+
+        if not tc_work_content.strip():
+            st.warning("작업내용을 입력해 주세요.")
+            return
+
+        if not tc_work_location.strip():
+            st.warning("작업장소를 입력해 주세요.")
+            return
+
+        if not tc_chemical or not str(tc_chemical).strip():
+            st.warning("취급물질을 입력하고 검색 결과에서 물질을 선택해 주세요.")
+            return
+
+        chemical_resolved = resolve_chemical_alias(str(tc_chemical).strip())
+        work_type_code = work_type_map[tc_work_type_display]
+
+        # 자동 시간 감지(get_client_datetime) 대신, 안전관리자가 직접 입력한
+        # 작업 시작 시간을 위험도 계산에 그대로 사용한다.
+        start_dt = datetime.combine(datetime.now().date(), tc_start_time)
+        time_slot, _ = get_current_time_slot(start_dt)
+
+        try:
+            result, err = run_risk_scoring(chemical_resolved, work_type_code, time_slot)
+
+            if err:
+                st.error(err)
+                return
+
+            with st.spinner("AI가 TBM 내용을 생성 중입니다..."):
+                ai_result = run_ai_hazard_analysis(result)
+
+            st.session_state.task_analysis = {
+                "work_name": tc_work_name.strip(),
+                "work_content": tc_work_content.strip(),
+                "work_location": tc_work_location.strip(),
+                "tbm_place": tc_tbm_place.strip(),
+                "risk_assessment_done": tc_risk_assessment_done,
+                "work_type_code": work_type_code,
+                "work_type_display": tc_work_type_display,
+                "start_time": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "scheduled_time": tc_start_time.strftime("%H:%M"),
+                "time_slot": time_slot,
+                "material_name": chemical_resolved,
+                "chem_id": result.get("chem_id", ""),
+                "chem_name": result.get("chem_name", ""),
+                "risk_score": result["score"],
+                "risk_level": result["level"],
+                "main_hazard_1": ai_result["main_hazard_1"],
+                "main_hazard_2": ai_result["main_hazard_2"],
+                "main_hazard_3": ai_result["main_hazard_3"],
+                "safety_measure_1": ai_result["safety_measure_1"],
+                "safety_measure_2": ai_result["safety_measure_2"],
+                "safety_measure_3": ai_result["safety_measure_3"],
+                "similar_accident_text": ai_result["similar_accident_ai_text"] if ai_result["similar_accident"] is not None else "",
+            }
+
+        except Exception as e:
+            st.error("위험도 분석 중 오류가 발생했습니다.")
+            st.exception(e)
+
+    # =========================
+    # 분석 결과 + 중점위험요인 선택
+    # =========================
+    analysis = st.session_state.get("task_analysis")
+
+    if analysis:
+        st.markdown('<div class="manager-section-title">위험도 분석 결과</div>', unsafe_allow_html=True)
+
+        render_risk_summary_card(float(analysis["risk_score"]))
+
+        risk_items = [
+            h for h in (analysis["main_hazard_1"], analysis["main_hazard_2"], analysis["main_hazard_3"])
+            if h
+        ]
+        measure_items = [
+            m for m in (analysis["safety_measure_1"], analysis["safety_measure_2"], analysis["safety_measure_3"])
+            if m
+        ]
+
+        render_ai_hazard_cards(risk_items)
+        render_safety_measure_cards(measure_items)
+        render_similar_accident_card(analysis["similar_accident_text"])
+
+        if analysis.get("chem_name"):
+            st.markdown(
+                f"""
+<div class="result-info-caption">
+    작업물질: {analysis['chem_name']} / CHEMID: {analysis['chem_id']}
+</div>
+""",
+                unsafe_allow_html=True
+            )
+
+        st.markdown('<div class="manager-section-title">중점위험요인 선택</div>', unsafe_allow_html=True)
+
+        selected_hazard = ""
+        selected_measure = ""
+
+        if risk_items:
+            selected_hazard = st.radio(
+                "중점위험요인으로 지정할 항목을 선택하세요",
+                risk_items,
+                key="tc_selected_hazard"
+            )
+            selected_idx = risk_items.index(selected_hazard)
+            if selected_idx < len(measure_items):
+                selected_measure = measure_items[selected_idx]
+
+            st.markdown(
+                f'<div class="result-info-caption"><b>선정된 대책</b> : {selected_measure}</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.warning("선택할 위험요인이 없습니다.")
+
+        if st.button("➕ 오늘 작업 등록", key="create_work_task_btn", use_container_width=True):
+
+            if not tc_assigned_workers:
+                st.warning("작업자를 1명 이상 선택해 주세요.")
+                return
+
+            try:
+                saved_task = create_work_task(
+                    team_id=st.session_state.get("team_id", ""),
+                    team_name=st.session_state.get("team_name", ""),
+                    work_name=analysis["work_name"],
+                    work_content=analysis["work_content"],
+                    work_location=analysis["work_location"],
+                    work_date=datetime.now().strftime("%Y-%m-%d"),
+                    scheduled_time=analysis["scheduled_time"],
+                    tbm_place=analysis["tbm_place"],
+                    assigned_workers=tc_assigned_workers,
+                    risk_assessment_done=analysis["risk_assessment_done"],
+                    work_type_code=analysis["work_type_code"],
+                    work_type_display=analysis["work_type_display"],
+                    start_time=analysis["start_time"],
+                    time_slot=analysis["time_slot"],
+                    material_name=analysis["material_name"],
+                    chem_id=analysis["chem_id"],
+                    chem_name=analysis["chem_name"],
+                    risk_score=analysis["risk_score"],
+                    risk_level=analysis["risk_level"],
+                    main_hazard_1=analysis["main_hazard_1"],
+                    main_hazard_2=analysis["main_hazard_2"],
+                    main_hazard_3=analysis["main_hazard_3"],
+                    safety_measure_1=analysis["safety_measure_1"],
+                    safety_measure_2=analysis["safety_measure_2"],
+                    safety_measure_3=analysis["safety_measure_3"],
+                    selected_hazard=selected_hazard,
+                    selected_measure=selected_measure,
+                    similar_accident_text=analysis["similar_accident_text"]
+                )
+
+                if saved_task:
+                    st.session_state.pop("task_analysis", None)
+                    st.success("오늘 작업이 등록되었습니다.")
+                    st.session_state.page = "manager"
+                    st.rerun()
+                else:
+                    st.error("작업 등록 결과가 비어 있습니다.")
+
+            except Exception as e:
+                st.error("작업 등록 중 오류가 발생했습니다.")
+                st.write(str(e))
+
 def show_manager_dashboard():
 
     if not st.session_state.get("team_id"):
@@ -4448,95 +4877,9 @@ def show_manager_dashboard():
 
     render_topbar("manager", "안전관리자 대시보드", "manager-title", help_key="manager")
 
-    st.markdown('<div class="manager-section-title">오늘 작업 등록</div>', unsafe_allow_html=True)
-
-    workers = get_team_workers(st.session_state.get("team_id", ""))
-
-    task_work_name = st.text_input(
-        "작업명",
-        placeholder="예: 배관 플랜지 교체 작업",
-        key="task_work_name"
-    )
-
-    task_work_content = st.text_area(
-        "작업내용",
-        placeholder="예: 노후 배관 플랜지 분리, 가스켓 교체 및 체결 작업",
-        height=100,
-        key="task_work_content"
-    )
-
-    task_work_location = st.text_input(
-        "작업장소",
-        placeholder="예: 2공장 반응기실",
-        key="task_work_location"
-    )
-
-
-    task_scheduled_time = st.text_input(
-        "예정시간",
-        placeholder="예: 09:00 ~ 11:00",
-        key="task_scheduled_time"
-    )
-
-    task_tbm_place = st.text_input(
-        "TBM 장소",
-        placeholder="예: 현장 작업구역 앞",
-        key="task_tbm_place"
-    )
-
-    risk_assessment_done = st.checkbox(
-        "위험성평가 실시",
-        value=True,
-        key="task_risk_assessment_done"
-    )
-
-    assigned_workers = st.multiselect(
-        "작업자 선택",
-        workers,
-        key="task_assigned_workers"
-    )
-
-    if st.button("➕ 오늘 작업 등록", key="create_work_task_btn", use_container_width=True):
-
-        if not task_work_name.strip():
-            st.warning("작업명을 입력해 주세요.")
-            return
-
-        if not task_work_content.strip():
-            st.warning("작업내용을 입력해 주세요.")
-            return
-
-        if not task_work_location.strip():
-            st.warning("작업장소를 입력해 주세요.")
-            return
-
-        if not assigned_workers:
-            st.warning("작업자를 1명 이상 선택해 주세요.")
-            return
-
-        try:
-            saved_task = create_work_task(
-                team_id=st.session_state.get("team_id", ""),
-                team_name=st.session_state.get("team_name", ""),
-                work_name=task_work_name.strip(),
-                work_content=task_work_content.strip(),
-                work_location=task_work_location.strip(),
-                work_date=datetime.now().strftime("%Y-%m-%d"),
-                scheduled_time=task_scheduled_time.strip(),
-                tbm_place=task_tbm_place.strip(),
-                assigned_workers=assigned_workers,
-                risk_assessment_done=risk_assessment_done
-            )
-
-            if saved_task:
-                st.success("오늘 작업이 등록되었습니다.")
-                st.rerun()
-            else:
-                st.error("작업 등록 결과가 비어 있습니다.")
-
-        except Exception as e:
-            st.error("작업 등록 중 오류가 발생했습니다.")
-            st.write(str(e))
+    if st.button("📝 오늘 작업 입력", key="goto_task_create_btn", use_container_width=True):
+        st.session_state.page = "task_create"
+        st.rerun()
 
     st.markdown('<div class="manager-section-title">오늘 등록된 작업</div>', unsafe_allow_html=True)
 
@@ -5321,6 +5664,9 @@ elif st.session_state.page == "input":
 elif st.session_state.page == "result":
     show_risk_result()
 
+elif st.session_state.page == "task_info":
+    show_task_info()
+
 elif st.session_state.page == "checklist":
     show_checklist()
 
@@ -5329,5 +5675,8 @@ elif st.session_state.page == "journal":
 
 elif st.session_state.page == "manager":
     show_manager_dashboard()
+
+elif st.session_state.page == "task_create":
+    show_task_create()
 
 show_active_help_popup()
