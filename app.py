@@ -97,6 +97,8 @@ from supabase import create_client
 from io import BytesIO
 from docxtpl import DocxTemplate
 from docx.shared import Emu
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from streamlit_js_eval import streamlit_js_eval
 from streamlit_searchbox import st_searchbox
 from streamlit_drawable_canvas import st_canvas
@@ -3197,6 +3199,46 @@ def _insert_signature_image(cell, png_bytes):
     )
 
 
+TBM_DOCX_FONT = "맑은 고딕"
+
+
+def _set_run_font(run, font_name=TBM_DOCX_FONT):
+    """
+    run의 서체를 지정한다. python-docx의 font.name은 영문(ascii/hAnsi)만 바꾸고
+    한글은 eastAsia 서체를 따로 봐서, 이걸 안 맞춰주면 셀마다 서체가 다르게 보인다.
+    """
+    run.font.name = font_name
+    rpr = run._element.get_or_add_rPr()
+    rfonts = rpr.find(qn("w:rFonts"))
+    if rfonts is None:
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+    rfonts.set(qn("w:eastAsia"), font_name)
+
+
+def _normalize_docx_fonts(doc, font_name=TBM_DOCX_FONT):
+    """
+    문서 전체(본문 문단 + 표, 중첩된 표 포함)의 모든 run 서체를 하나로 통일한다.
+    cell.text=... / add_paragraph(...)로 새로 채운 텍스트는 템플릿 서체를 안 물려받고
+    기본 서체(Calibri 등)로 들어가서, 렌더링 후 마지막에 한 번 덮어써야 한다.
+    """
+    def process_paragraphs(paragraphs):
+        for paragraph in paragraphs:
+            for run in paragraph.runs:
+                _set_run_font(run, font_name)
+
+    def process_table(table):
+        for row in table.rows:
+            for cell in row.cells:
+                process_paragraphs(cell.paragraphs)
+                for nested_table in cell.tables:
+                    process_table(nested_table)
+
+    process_paragraphs(doc.paragraphs)
+    for table in doc.tables:
+        process_table(table)
+
+
 def generate_tbm_docx(task, logs, signatures_by_worker=None):
     template_path = "tbm_template.docx"
 
@@ -3316,6 +3358,11 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
 
     except Exception as e:
         print("참석자 확인란 입력 오류:", e)
+
+    try:
+        _normalize_docx_fonts(doc)
+    except Exception as e:
+        print("서체 통일 오류:", e)
 
     output = BytesIO()
     doc.save(output)
