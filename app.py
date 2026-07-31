@@ -81,7 +81,7 @@ CHEMICAL_ALIASES = {
 }
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 import time
 import os
 from pathlib import Path
@@ -3286,18 +3286,23 @@ def make_casualty_text(row):
     return ", ".join(parts) + "이 발생한 사고."
 
 
-def find_similar_accident(result):
+def find_similar_accident(result, current_month=None):
+    """
+    current_month를 명시적으로 넘기면 그 값을 그대로 쓰고(예: 접속 기기의 현재 월),
+    안 넘기면 기존처럼 result["작업시간"]에서 월을 뽑아보고 실패하면 서버 시각으로 폴백한다.
+    """
     df = final_result.copy()
 
     work_type = str(result.get("작업유형", "")).strip()
     chem_id = str(result.get("chem_id", "")).strip().zfill(6)
     df["CHEMID"] = df["CHEMID"].astype(str).str.strip().str.zfill(6)
 
-    work_time = result.get("작업시간", "")
-    try:
-        current_month = pd.to_datetime(work_time).month
-    except Exception:
-        current_month = datetime.now().month
+    if current_month is None:
+        work_time = result.get("작업시간", "")
+        try:
+            current_month = pd.to_datetime(work_time).month
+        except Exception:
+            current_month = datetime.now().month
 
     df["작업유형"] = df["작업유형"].astype(str).str.strip()
     df["CHEMID"] = df["CHEMID"].astype(str).str.strip()
@@ -3841,14 +3846,87 @@ def render_similar_accident_card(similar_accident_text):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def run_ai_hazard_analysis(result):
+def render_selectable_hazard_cards(risk_items, session_key):
+    """
+    "AI 분석 주요 위험요인" 카드 각각에 선택 버튼을 붙여서 렌더링한다 (안전관리자 전용).
+    선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
+    """
+    st.markdown("""
+<div class="result-card-header">
+    <div class="result-card-icon">🧠</div>
+    <div class="result-card-title">AI 분석 주요 위험요인 (중점위험요인 선택)</div>
+</div>
+""", unsafe_allow_html=True)
+
+    selected_idx = st.session_state.get(session_key)
+
+    for i, item in enumerate(risk_items):
+        is_selected = (selected_idx == i)
+
+        with st.container(border=True):
+            st.markdown(
+                f'<div class="message-item"><div class="message-num">{i + 1:02d}</div>'
+                f'<div class="message-text">{item}</div></div>',
+                unsafe_allow_html=True
+            )
+
+            btn_label = "✅ 중점위험요인으로 선택됨" if is_selected else "이 항목을 중점위험요인으로 선택"
+
+            if st.button(
+                btn_label,
+                key=f"{session_key}_btn_{i}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state[session_key] = i
+                st.rerun()
+
+
+def render_selectable_measure_cards(measure_items, session_key):
+    """
+    "안전 및 사고 예방대책" 카드 각각에 선택 버튼을 붙여서 렌더링한다 (안전관리자 전용).
+    선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
+    """
+    st.markdown("""
+<div class="result-card-header">
+    <div class="result-card-icon">🛡️</div>
+    <div class="result-card-title">안전 및 사고 예방대책 (대책 선택)</div>
+</div>
+""", unsafe_allow_html=True)
+
+    selected_idx = st.session_state.get(session_key)
+
+    for i, item in enumerate(measure_items):
+        is_selected = (selected_idx == i)
+
+        with st.container(border=True):
+            st.markdown(
+                f'<div class="measure-item"><div class="measure-check">✓</div>'
+                f'<div class="measure-text">{item}</div></div>',
+                unsafe_allow_html=True
+            )
+
+            btn_label = "✅ 대책으로 선택됨" if is_selected else "이 항목을 대책으로 선택"
+
+            if st.button(
+                btn_label,
+                key=f"{session_key}_btn_{i}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                st.session_state[session_key] = i
+                st.rerun()
+
+
+def run_ai_hazard_analysis(result, current_month=None):
     """
     위험도 계산 결과(result)를 바탕으로 AI 위험요인/안전대책/유사사고 텍스트를 생성한다.
     작업자 모드(show_risk_result)와 안전관리자 모드(show_task_create)가 공유해서 쓴다.
+    current_month를 넘기면 유사사고사례 매칭 시 그 월을 기준으로 쓴다.
     """
     material_risk_items, work_risk_items, material_measure_items, work_measure_items = get_risk_and_measure_messages(result)
 
-    similar_accident, match_level = find_similar_accident(result)
+    similar_accident, match_level = find_similar_accident(result, current_month=current_month)
 
     if similar_accident is not None:
         accident_date = similar_accident.get("date", "")
@@ -4465,6 +4543,10 @@ def show_task_create():
 
     render_topbar("task_create", "오늘 작업 입력", "manager-title", back_page="manager", help_key="manager")
 
+    # 안전관리자 기기(브라우저)의 현재 접속 시각. 위험도 계산용 시간(작업 시작 시간)에는
+    # 쓰지 않고, 유사사고사례를 월(月) 기준으로 찾을 때만 사용한다.
+    client_dt = get_client_datetime()
+
     workers = get_team_workers(st.session_state.get("team_id", ""))
 
     st.markdown('<div class="manager-section-title">작업 기본정보</div>', unsafe_allow_html=True)
@@ -4494,8 +4576,6 @@ def show_task_create():
         key="tc_tbm_place"
     )
 
-    st.markdown('<div class="manager-section-title">위험도 분석용 정보</div>', unsafe_allow_html=True)
-
     work_type_options = [
         "정기작업",
         "비작업(순찰·경비)",
@@ -4511,11 +4591,28 @@ def show_task_create():
         key="tc_work_type"
     )
 
-    tc_start_time = st.time_input(
-        "작업 시작 시간",
-        value=datetime.now().time(),
-        key="tc_start_time"
-    )
+    st.markdown('<div class="field-label">작업 시작 시간</div>', unsafe_allow_html=True)
+
+    _now_local = datetime.now()
+    col_hour, col_minute = st.columns(2)
+
+    with col_hour:
+        tc_start_hour = st.slider(
+            "시",
+            0, 23,
+            st.session_state.get("tc_start_hour", _now_local.hour),
+            key="tc_start_hour"
+        )
+
+    with col_minute:
+        tc_start_minute = st.slider(
+            "분",
+            0, 59,
+            st.session_state.get("tc_start_minute", _now_local.minute),
+            key="tc_start_minute"
+        )
+
+    tc_start_time = dt_time(tc_start_hour, tc_start_minute)
 
     tc_chemical = st_searchbox(
         search_chemical_candidates,
@@ -4578,8 +4675,21 @@ def show_task_create():
                 st.error(err)
                 return
 
+            # get_risk_and_measure_messages / find_similar_accident가 작업유형으로
+            # 매칭하므로 결과 dict에 넣어준다 (이게 빠져 있어서 유사사고사례가
+            # 항상 "없음"으로 나왔던 원인 중 하나였다).
+            result["작업유형"] = tc_work_type_display
+
+            # 유사사고사례의 "월" 기준은 작업 시작시간이 아니라 안전관리자
+            # 기기의 현재 접속 시각으로 판정한다.
+            current_month = client_dt.month if client_dt else datetime.now().month
+
             with st.spinner("AI가 TBM 내용을 생성 중입니다..."):
-                ai_result = run_ai_hazard_analysis(result)
+                ai_result = run_ai_hazard_analysis(result, current_month=current_month)
+
+            # 새로 분석하면 이전 분석에서 골라뒀던 중점위험요인/대책 선택은 초기화한다.
+            st.session_state.pop("tc_selected_hazard_idx", None)
+            st.session_state.pop("tc_selected_measure_idx", None)
 
             st.session_state.task_analysis = {
                 "work_name": tc_work_name.strip(),
@@ -4629,8 +4739,16 @@ def show_task_create():
             if m
         ]
 
-        render_ai_hazard_cards(risk_items)
-        render_safety_measure_cards(measure_items)
+        if risk_items:
+            render_selectable_hazard_cards(risk_items, "tc_selected_hazard_idx")
+        else:
+            render_ai_hazard_cards(risk_items)
+
+        if measure_items:
+            render_selectable_measure_cards(measure_items, "tc_selected_measure_idx")
+        else:
+            render_safety_measure_cards(measure_items)
+
         render_similar_accident_card(analysis["similar_accident_text"])
 
         if analysis.get("chem_name"):
@@ -4643,32 +4761,24 @@ def show_task_create():
                 unsafe_allow_html=True
             )
 
-        st.markdown('<div class="manager-section-title">중점위험요인 선택</div>', unsafe_allow_html=True)
+        hazard_idx = st.session_state.get("tc_selected_hazard_idx")
+        measure_idx = st.session_state.get("tc_selected_measure_idx")
 
-        selected_hazard = ""
-        selected_measure = ""
-
-        if risk_items:
-            selected_hazard = st.radio(
-                "중점위험요인으로 지정할 항목을 선택하세요",
-                risk_items,
-                key="tc_selected_hazard"
-            )
-            selected_idx = risk_items.index(selected_hazard)
-            if selected_idx < len(measure_items):
-                selected_measure = measure_items[selected_idx]
-
-            st.markdown(
-                f'<div class="result-info-caption"><b>선정된 대책</b> : {selected_measure}</div>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.warning("선택할 위험요인이 없습니다.")
+        selected_hazard = risk_items[hazard_idx] if hazard_idx is not None and hazard_idx < len(risk_items) else ""
+        selected_measure = measure_items[measure_idx] if measure_idx is not None and measure_idx < len(measure_items) else ""
 
         if st.button("➕ 오늘 작업 등록", key="create_work_task_btn", use_container_width=True):
 
             if not tc_assigned_workers:
                 st.warning("작업자를 1명 이상 선택해 주세요.")
+                return
+
+            if risk_items and not selected_hazard:
+                st.warning("중점위험요인을 선택해 주세요.")
+                return
+
+            if measure_items and not selected_measure:
+                st.warning("중점위험요인의 대책을 선택해 주세요.")
                 return
 
             try:
@@ -4705,6 +4815,8 @@ def show_task_create():
 
                 if saved_task:
                     st.session_state.pop("task_analysis", None)
+                    st.session_state.pop("tc_selected_hazard_idx", None)
+                    st.session_state.pop("tc_selected_measure_idx", None)
                     st.success("오늘 작업이 등록되었습니다.")
                     st.session_state.page = "manager"
                     st.rerun()
