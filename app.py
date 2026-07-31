@@ -81,7 +81,7 @@ CHEMICAL_ALIASES = {
 }
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import os
 from pathlib import Path
@@ -89,14 +89,17 @@ import textwrap
 import streamlit.components.v1 as components
 import re
 import base64
+import copy
 from PIL import Image
 from difflib import SequenceMatcher
 from openai import OpenAI
 from supabase import create_client
 from io import BytesIO
 from docxtpl import DocxTemplate
+from docx.shared import Emu
 from streamlit_js_eval import streamlit_js_eval
 from streamlit_searchbox import st_searchbox
+from streamlit_drawable_canvas import st_canvas
 
 # =========================
 # 1) 파일 불러오기
@@ -2613,7 +2616,11 @@ def generate_ai_text(
 [AI 주요 위험요인 작성 원칙]
 - 물질군 위험요인과 작업유형 위험요인을 따로 나열하지 말 것
 - 반드시 물질의 위험성과 작업유형의 위험상황을 한 문장 안에서 연결해서 설명할 것
-- 작업유형과 직접 관련된 위험상황 중심으로 작성할 것
+- 특정 화학물질명, 제품명, CAS 번호를 사용하지 말 것
+- 특정 작업명이나 사용자가 입력한 작업명을 사용하지 말 것
+- 물질명 대신 부식성, 인화성, 독성, 산화성 등 유해·위험 특성으로 표현할 것
+- 작업명 대신 설비 개방, 연결부 분리, 잔압 제거, 누출, 비산 등 실제 위험상황으로 표현할 것
+- “질산 취급 시”, “메탄올 작업 중”, “배관 교체 시”와 같은 문장 형식을 사용하지 말 것
 - 일반적인 화학안전 설명보다 현재 작업상황 중심으로 작성할 것
 - 개별 위험요인을 단순 나열하지 말고 작업 흐름처럼 연결해서 설명할 것
 - 각 항목은 최대 3개까지만 작성할 것
@@ -2622,6 +2629,9 @@ def generate_ai_text(
 [안전 및 예방조치 작성 원칙]
 - 작업자가 바로 실행할 수 있는 행동 중심으로 작성할 것
 - 물질 특성과 작업유형 상황을 함께 고려한 예방조치로 작성할 것
+- 특정 화학물질명이나 특정 작업명을 사용하지 말 것
+- 물질명 대신 해당 물질의 유해·위험 특성을 사용하여 작성할 것
+- 작업명 대신 작업 단계, 설비 상태 및 작업자의 행동을 중심으로 작성할 것
 - 각 항목은 최대 3개까지만 작성할 것
 - 한 문장에는 최대 2개의 조치만 포함할 것
 
@@ -2830,7 +2840,189 @@ def get_all_work_tasks(team_id):
 
     return result.data if result.data else []
 
-def generate_tbm_docx(task, logs):
+def _set_cell_lines(cell, lines):
+    """빈 병합 셀에 여러 줄을 문단 단위로 채워 넣는다."""
+    if not lines:
+        lines = ["-"]
+
+    cell.paragraphs[0].text = lines[0]
+    for line in lines[1:]:
+        cell.add_paragraph(line)
+
+
+def _mark_checkbox(cell, yes):
+    """'예 □ 아니오 □' 형태의 셀에서 해당하는 □ 런을 ■로 치환한다."""
+    boxes = []
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            if "□" in run.text:
+                boxes.append(run)
+
+    if len(boxes) < 2:
+        return
+
+    target = boxes[0] if yes else boxes[1]
+    target.text = target.text.replace("□", "■")
+
+
+SIGNATURE_BUCKET = "tbm-signatures"
+
+ATTENDEE_NAME_COLS = (0, 5, 9)
+ATTENDEE_NAME_TO_SIG_COL = {0: 2, 5: 8, 9: 11}
+ATTENDEE_FIRST_ROW = 22
+ATTENDEE_ORIGINAL_LAST_ROW = 25
+
+SIGNATURE_CELL_WIDTH_EMU = 950000   # 표의 서명 칸 실측 폭(약 1.1인치)보다 살짝 작게
+SIGNATURE_CELL_HEIGHT_EMU = 320000  # 행 높이가 과도하게 늘어나지 않도록 하는 상한
+
+
+def upload_signature(task_id, team_id, worker_name, png_bytes):
+    """서명 PNG를 Supabase Storage에 올리고 tbm_signatures 테이블에 기록한다."""
+    if not png_bytes:
+        return None
+
+    # Supabase Storage 객체 키는 한글 등 비-ASCII 문자를 허용하지 않아(InvalidKey),
+    # 작성자명은 경로에 넣지 않고 tbm_signatures 테이블 컬럼으로만 관리한다.
+    saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    storage_path = f"{task_id}/sig_{file_stamp}.png"
+
+    try:
+        supabase.storage.from_(SIGNATURE_BUCKET).upload(
+            storage_path,
+            png_bytes,
+            {"content-type": "image/png"}
+        )
+
+        supabase.table("tbm_signatures").insert({
+            "task_id": task_id,
+            "team_id": team_id,
+            "worker_name": worker_name,
+            "storage_path": storage_path,
+            "created_at": saved_at,
+        }).execute()
+
+        return storage_path
+    except Exception as e:
+        print("서명 이미지 업로드 오류:", e)
+        return None
+
+
+def fetch_signatures_for_task(task_id):
+    """작업(task_id)에 대해 제출된 서명 이미지를 작성자명 기준으로 내려받는다."""
+    signatures_by_worker = {}
+
+    try:
+        result = (
+            supabase.table("tbm_signatures")
+            .select("*")
+            .eq("task_id", task_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+
+        for row in (result.data or []):
+            worker_name = row.get("worker_name")
+            storage_path = row.get("storage_path")
+
+            if not worker_name or not storage_path:
+                continue
+
+            try:
+                png_bytes = supabase.storage.from_(SIGNATURE_BUCKET).download(storage_path)
+                signatures_by_worker[worker_name] = png_bytes
+            except Exception as e:
+                print(f"서명 이미지 다운로드 오류 ({worker_name}):", e)
+
+    except Exception as e:
+        print("서명 이미지 조회 오류:", e)
+
+    return signatures_by_worker
+
+
+def cleanup_expired_signatures(team_id):
+    """TBM 워드 파일이 생성된 작업에 한해, 저장된 지 48시간 지난 서명 이미지를 정리한다."""
+    if not team_id:
+        return
+
+    try:
+        tasks_result = (
+            supabase.table("work_tasks")
+            .select("id, tbm_docx_generated_at")
+            .eq("team_id", team_id)
+            .execute()
+        )
+
+        eligible_task_ids = [
+            t["id"] for t in (tasks_result.data or [])
+            if t.get("tbm_docx_generated_at")
+        ]
+
+        if not eligible_task_ids:
+            return
+
+        cutoff = (datetime.now() - timedelta(hours=48)).strftime("%Y-%m-%d %H:%M:%S")
+
+        sig_result = (
+            supabase.table("tbm_signatures")
+            .select("id, storage_path, task_id, created_at")
+            .in_("task_id", eligible_task_ids)
+            .lt("created_at", cutoff)
+            .execute()
+        )
+
+        expired = sig_result.data or []
+        if not expired:
+            return
+
+        paths = [row["storage_path"] for row in expired if row.get("storage_path")]
+        if paths:
+            supabase.storage.from_(SIGNATURE_BUCKET).remove(paths)
+
+        ids = [row["id"] for row in expired]
+        supabase.table("tbm_signatures").delete().in_("id", ids).execute()
+
+    except Exception as e:
+        print("서명 이미지 자동 삭제 오류:", e)
+
+
+def _add_attendee_row(table):
+    """참석자 표의 마지막 행과 동일한 구조(병합 포함)로 새 행을 하나 복제해 추가한다."""
+    last_tr = table.rows[-1]._tr
+    new_tr = copy.deepcopy(last_tr)
+    table._tbl.append(new_tr)
+    return table.rows[-1]
+
+
+def _insert_signature_image(cell, png_bytes):
+    """서명 이미지를 비율을 유지한 채 칸 크기에 맞춰 삽입한다."""
+    if not png_bytes:
+        return
+
+    try:
+        with Image.open(BytesIO(png_bytes)) as im:
+            width_px, height_px = im.size
+    except Exception as e:
+        print("서명 이미지 열기 오류:", e)
+        return
+
+    if not width_px or not height_px:
+        return
+
+    ratio = width_px / height_px
+    target_w = SIGNATURE_CELL_WIDTH_EMU
+    target_h = int(target_w / ratio)
+
+    if target_h > SIGNATURE_CELL_HEIGHT_EMU:
+        target_h = SIGNATURE_CELL_HEIGHT_EMU
+        target_w = int(target_h * ratio)
+
+    cell.paragraphs[0].add_run().add_picture(
+        BytesIO(png_bytes), width=Emu(target_w), height=Emu(target_h)
+    )
+
+
+def generate_tbm_docx(task, logs, signatures_by_worker=None):
     template_path = "tbm_template.docx"
 
     doc = DocxTemplate(template_path)
@@ -2844,24 +3036,15 @@ def generate_tbm_docx(task, logs):
     if leader_log is None and logs:
         leader_log = logs[0]
 
-    tbm_start = ""
-    tbm_end = ""
-
-    if leader_log:
-        tbm_start = leader_log.get("tbm_start_time", "")
-        tbm_end = leader_log.get("tbm_end_time", "")
+    # TBM 리더가 "제출하기"를 누른 시각(tbm_end_time)을 TBM 일시로 사용
+    tbm_end = leader_log.get("tbm_end_time", "") if leader_log else ""
 
     tbm_datetime = ""
     try:
-        start_dt = datetime.strptime(tbm_start, "%Y-%m-%d %H:%M:%S")
         end_dt = datetime.strptime(tbm_end, "%Y-%m-%d %H:%M:%S")
-
-        tbm_datetime = (
-            f"{start_dt.strftime('%Y년 %m월 %d일 %H:%M')} "
-            f"~ {end_dt.strftime('%H:%M')}"
-        )
+        tbm_datetime = end_dt.strftime("%Y년 %m월 %d일 %H:%M")
     except Exception:
-        tbm_datetime = f"{tbm_start} ~ {tbm_end}"
+        tbm_datetime = tbm_end
 
     worker_list = [
         log.get("worker_name", "")
@@ -2869,22 +3052,13 @@ def generate_tbm_docx(task, logs):
         if log.get("worker_name")
     ]
 
-    daily_check_result = ""
-    closing_meeting = ""
-
-    if leader_log:
-        daily_check_result = leader_log.get("daily_safety_check_result", "")
-        closing_meeting = leader_log.get("closing_meeting_result", "")
-
     context = {
         "tbm_datetime": tbm_datetime,
         "work_name": task.get("work_name", ""),
         "work_content": task.get("work_content", ""),
-        "tbm_location": task.get("tbm_place", ""),
-        "daily_check_result": daily_check_result,
-        "closing_meeting": closing_meeting,
+        "tbm_place": task.get("tbm_place", ""),
         "leader_department": leader_log.get("leader_department", "") if leader_log else "",
-        "leader_position": leader_log.get("leader_position", "") if leader_log else "",
+        "leader_potition": leader_log.get("leader_position", "") if leader_log else "",
         "leader_name": leader_log.get("leader_name", "") if leader_log else "",
 
         "main_hazard_1": leader_log.get("main_hazard_1", "") if leader_log else "",
@@ -2898,27 +3072,63 @@ def generate_tbm_docx(task, logs):
 
     doc.render(context)
 
-    # 참석자 확인란 자동 입력
+    table = doc.tables[0]
+
+    # 위험성평가 실시여부 체크 표시
     try:
-        attendee_table = doc.tables[0]
+        _mark_checkbox(table.cell(3, 10), bool(task.get("risk_assessment_done")))
+    except Exception as e:
+        print("위험성평가 실시여부 표시 오류:", e)
 
-        worker_list = [
-            log.get("worker_name", "")
+    # 작업 전 일일 안전점검 시행 결과 (작성자별 목록)
+    try:
+        daily_check_lines = [
+            f"- {log.get('worker_name', '-')}: {log.get('daily_safety_check_result')}"
             for log in logs
-            if log.get("worker_name")
+            if log.get("daily_safety_check_result")
         ]
+        _set_cell_lines(table.cell(17, 0), daily_check_lines)
+    except Exception as e:
+        print("작업 전 일일 안전점검 시행 결과 입력 오류:", e)
 
-        # 참석자 입력칸 위치: 22~25행, 각 행 6칸
+    # 작업 후 종료 미팅 (작성자별 목록)
+    try:
+        closing_meeting_lines = [
+            f"- {log.get('worker_name', '-')}: {log.get('closing_meeting_result')}"
+            for log in logs
+            if log.get("closing_meeting_result")
+        ]
+        _set_cell_lines(table.cell(19, 0), closing_meeting_lines)
+    except Exception as e:
+        print("작업 후 종료 미팅 입력 오류:", e)
+
+    # 참석자 확인란 자동 입력 (행당 이름 칸: 열 0, 5, 9 / 서명 칸: 열 2, 8, 11)
+    try:
+        signatures_by_worker = signatures_by_worker or {}
+        slots_per_row = len(ATTENDEE_NAME_COLS)
+        base_row_count = ATTENDEE_ORIGINAL_LAST_ROW - ATTENDEE_FIRST_ROW + 1
+
+        rows_needed = -(-len(worker_list) // slots_per_row) if worker_list else 0  # 올림 나눗셈
+        rows_needed = max(rows_needed, base_row_count)
+
+        for _ in range(rows_needed - base_row_count):
+            _add_attendee_row(table)
+
+        attendee_row_indices = list(range(ATTENDEE_FIRST_ROW, ATTENDEE_FIRST_ROW + rows_needed))
         attendee_cells = [
-            (22, 0), (22, 2), (22, 5), (22, 8), (22, 10), (22, 11),
-            (23, 0), (23, 2), (23, 5), (23, 8), (23, 10), (23, 11),
-            (24, 0), (24, 2), (24, 5), (24, 8), (24, 10), (24, 11),
-            (25, 0), (25, 2), (25, 5), (25, 8), (25, 10), (25, 11),
+            (row, col)
+            for row in attendee_row_indices
+            for col in ATTENDEE_NAME_COLS
         ]
 
         for worker_name, cell_pos in zip(worker_list, attendee_cells):
-            row_idx, col_idx = cell_pos
-            attendee_table.cell(row_idx, col_idx).text = worker_name
+            row_idx, name_col = cell_pos
+            table.cell(row_idx, name_col).text = worker_name
+
+            sig_col = ATTENDEE_NAME_TO_SIG_COL[name_col]
+            sig_bytes = signatures_by_worker.get(worker_name)
+            if sig_bytes:
+                _insert_signature_image(table.cell(row_idx, sig_col), sig_bytes)
 
     except Exception as e:
         print("참석자 확인란 입력 오류:", e)
@@ -3763,6 +3973,41 @@ def show_checklist():
     )
 
     # =========================
+    # 서명 입력
+    # =========================
+    st.markdown("""
+<div class="checklist-section-title">✍️ 서명</div>
+""", unsafe_allow_html=True)
+
+    st.caption("터치 또는 마우스로 아래 칸에 직접 서명해 주세요.")
+
+    signature_reset_count = st.session_state.get("signature_reset_count", 0)
+
+    canvas_result = st_canvas(
+        fill_color="rgba(0, 0, 0, 0)",
+        stroke_width=3,
+        stroke_color="#111111",
+        background_color="",
+        height=150,
+        width=320,
+        drawing_mode="freedraw",
+        display_toolbar=False,
+        key=f"signature_canvas_{signature_reset_count}",
+    )
+
+    if st.button("🧹 지우기 (다시 서명)"):
+        st.session_state.signature_reset_count = signature_reset_count + 1
+        st.rerun()
+
+    signature_drawn = (
+        canvas_result.image_data is not None
+        and bool(np.any(canvas_result.image_data[:, :, 3] > 0))
+    )
+
+    if not signature_drawn:
+        st.warning("서명을 입력해야 TBM을 완료할 수 있습니다.")
+
+    # =========================
     # 저장 버튼
     # =========================
     if st.button("💾 TBM 완료 및 저장", use_container_width=True):
@@ -3777,6 +4022,17 @@ def show_checklist():
             for item in unchecked_items:
                 st.write(f"- {item}")
             return
+
+        if not signature_drawn:
+            st.error("서명을 입력해야 TBM을 완료할 수 있습니다.")
+            return
+
+        signature_image = Image.fromarray(
+            canvas_result.image_data.astype("uint8"), mode="RGBA"
+        )
+        signature_buf = BytesIO()
+        signature_image.save(signature_buf, format="PNG")
+        st.session_state.signature_png_bytes = signature_buf.getvalue()
 
         st.session_state.checklist_data = {
             "저장시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -3992,6 +4248,14 @@ def show_journal():
 
             }).execute()
 
+            upload_signature(
+                st.session_state.work_data.get("task_id", ""),
+                st.session_state.get("team_id", ""),
+                worker_name,
+                st.session_state.get("signature_png_bytes"),
+            )
+            st.session_state.pop("signature_png_bytes", None)
+
         except Exception as e:
 
             st.error("작업로그 DB 저장 실패")
@@ -4014,6 +4278,10 @@ def show_manager_dashboard():
             st.rerun()
 
         return
+
+    if not st.session_state.get("_signature_cleanup_done"):
+        cleanup_expired_signatures(st.session_state.get("team_id"))
+        st.session_state["_signature_cleanup_done"] = True
 
     st.markdown("""
 <style>
@@ -4301,9 +4569,10 @@ def show_manager_dashboard():
 
                 st.caption(f"제출된 TBM 기록: {len(task_logs)}건")
 
-                docx_file = generate_tbm_docx(task, task_logs)
+                signatures_by_worker = fetch_signatures_for_task(task.get("id", ""))
+                docx_file = generate_tbm_docx(task, task_logs, signatures_by_worker)
 
-                st.download_button(
+                downloaded = st.download_button(
                     label="📄 TBM 회의록 출력하기",
                     data=docx_file,
                     file_name=f"TBM회의록_{task.get('work_name', '작업')}.docx",
@@ -4311,6 +4580,14 @@ def show_manager_dashboard():
                     key=f"download_tbm_docx_{task.get('id')}",
                     use_container_width=True
                 )
+
+                if downloaded and not task.get("tbm_docx_generated_at"):
+                    try:
+                        supabase.table("work_tasks").update({
+                            "tbm_docx_generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }).eq("id", task.get("id")).execute()
+                    except Exception as e:
+                        print("tbm_docx_generated_at 업데이트 오류:", e)
 
             except Exception as e:
                 st.error("TBM 회의록 생성 실패")
