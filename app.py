@@ -1817,6 +1817,10 @@ def show_login():
     # =========================
     render_topbar("login", "작업 모드 선택", "create-team-app-title", back_page="team_access", help_key="login")
 
+    # 접속 기기의 로컬 날짜. "오늘 작업" 목록을 서버(UTC) 날짜로 조회하면
+    # 한국 시간 00시~09시 사이에는 하루 어긋난 목록이 나오므로 이걸 기준으로 삼는다.
+    login_client_dt = get_client_datetime()
+
     # =========================
     # 로그인 헤더
     # =========================
@@ -1856,7 +1860,8 @@ def show_login():
         )
         
         today_tasks = get_today_work_tasks(
-            st.session_state.get("team_id", "")
+            st.session_state.get("team_id", ""),
+            client_date=(login_client_dt or datetime.now()).strftime("%Y-%m-%d")
         )
         selected_task = None
         if today_tasks:
@@ -2986,22 +2991,25 @@ def get_team_workers(team_id):
     return []
 
 
-def get_today_work_tasks(team_id):
+def get_work_tasks_by_date(team_id, work_date):
     if not team_id:
         return []
-
-    today = datetime.now().strftime("%Y-%m-%d")
 
     result = (
         supabase.table("work_tasks")
         .select("*")
         .eq("team_id", team_id)
-        .eq("work_date", today)
+        .eq("work_date", work_date)
         .order("created_at", desc=True)
         .execute()
     )
 
     return result.data if result.data else []
+
+
+def get_today_work_tasks(team_id, client_date=None):
+    today = client_date or datetime.now().strftime("%Y-%m-%d")
+    return get_work_tasks_by_date(team_id, today)
 
 def get_all_work_tasks(team_id):
     if not team_id:
@@ -4287,7 +4295,7 @@ def show_checklist():
     work_name = work_data.get("작업명", "미입력")
     work_location = work_data.get("작업장소", "미입력")
     work_type = work_data.get("작업유형", "미입력")
-    current_date = datetime.now().strftime("%Y년 %m월 %d일")
+    current_date = (get_client_datetime() or datetime.now()).strftime("%Y년 %m월 %d일")
 
     checklist_info_html = f'<div class="checklist-info-card"><div class="checklist-badge">DAILY INSPECTION</div><div class="checklist-title">작업 전 안전점검(TBM)</div><div class="checklist-subtitle">일시: {current_date}<br>점검자: {worker_name}<br>작업명: {work_name}<br>작업장소: {work_location}<br>작업유형: {work_type}</div></div>'
     st.markdown(checklist_info_html, unsafe_allow_html=True)
@@ -4477,13 +4485,13 @@ def show_journal():
     work_location = work_data.get("작업장소", "미입력")
     work_type = work_data.get("작업유형", "미입력")
     chemical = work_data.get("취급물질", "미입력")
-    work_time = work_data.get("작업시간", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    work_time = work_data.get("작업시간") or (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M")
 
     score = result.get("score", None)
     level = result.get("level", "미산정")
     checklist_remark = checklist_data.get("특이사항", "")
 
-    today_text = datetime.now().strftime("%Y년 %m월 %d일")
+    today_text = (client_dt or datetime.now()).strftime("%Y년 %m월 %d일")
     score_text = f"{float(score):.0f}점" if score is not None else "미산정"
 
     # =========================
@@ -4774,6 +4782,14 @@ def show_task_create():
 
     workers = get_team_workers(st.session_state.get("team_id", ""))
 
+    tc_register_tomorrow = st.checkbox(
+        "내일 작업을 미리 등록합니다",
+        key="tc_register_tomorrow"
+    )
+
+    if tc_register_tomorrow:
+        st.caption("📅 이 작업은 '내일 예정된 작업'으로 등록되며, 날짜가 바뀌면 자동으로 '오늘 작업'이 됩니다.")
+
     st.markdown('<div class="manager-section-title">작업 기본정보</div>', unsafe_allow_html=True)
 
     tc_work_name = st.text_input(
@@ -4994,7 +5010,9 @@ def show_task_create():
         selected_hazard = risk_items[hazard_idx] if hazard_idx is not None and hazard_idx < len(risk_items) else ""
         selected_measure = measure_items[measure_idx] if measure_idx is not None and measure_idx < len(measure_items) else ""
 
-        if st.button("➕ 오늘 작업 등록", key="create_work_task_btn", use_container_width=True):
+        create_btn_label = "➕ 내일 작업 등록" if tc_register_tomorrow else "➕ 오늘 작업 등록"
+
+        if st.button(create_btn_label, key="create_work_task_btn", use_container_width=True):
 
             if not tc_assigned_workers:
                 st.warning("작업자를 1명 이상 선택해 주세요.")
@@ -5009,13 +5027,17 @@ def show_task_create():
                 return
 
             try:
+                target_dt = (client_dt or datetime.now())
+                if tc_register_tomorrow:
+                    target_dt = target_dt + timedelta(days=1)
+
                 saved_task = create_work_task(
                     team_id=st.session_state.get("team_id", ""),
                     team_name=st.session_state.get("team_name", ""),
                     work_name=analysis["work_name"],
                     work_content=analysis["work_content"],
                     work_location=analysis["work_location"],
-                    work_date=datetime.now().strftime("%Y-%m-%d"),
+                    work_date=target_dt.strftime("%Y-%m-%d"),
                     scheduled_time=analysis["scheduled_time"],
                     tbm_place=analysis["tbm_place"],
                     assigned_workers=tc_assigned_workers,
@@ -5044,7 +5066,10 @@ def show_task_create():
                     st.session_state.pop("task_analysis", None)
                     st.session_state.pop("tc_selected_hazard_idx", None)
                     st.session_state.pop("tc_selected_measure_idx", None)
-                    st.success("오늘 작업이 등록되었습니다.")
+                    if tc_register_tomorrow:
+                        st.success("내일 예정 작업으로 등록되었습니다.")
+                    else:
+                        st.success("오늘 작업이 등록되었습니다.")
                     st.session_state.page = "manager"
                     st.rerun()
                 else:
@@ -5069,6 +5094,10 @@ def show_manager_dashboard():
     if not st.session_state.get("_signature_cleanup_done"):
         cleanup_expired_signatures(st.session_state.get("team_id"))
         st.session_state["_signature_cleanup_done"] = True
+
+    # 안전관리자 기기의 로컬 날짜. "오늘 작업" 판정에 서버(UTC) 날짜를 쓰면
+    # 한국 시간 00시~09시 사이에는 하루 어긋난 작업 목록이 나오므로 이걸 기준으로 삼는다.
+    manager_client_dt = get_client_datetime()
 
     st.markdown("""
 <style>
@@ -5223,7 +5252,10 @@ def show_manager_dashboard():
     st.markdown('<div class="manager-section-title">오늘 등록된 작업</div>', unsafe_allow_html=True)
 
     try:
-        today_tasks = get_today_work_tasks(st.session_state.get("team_id", ""))
+        today_tasks = get_today_work_tasks(
+            st.session_state.get("team_id", ""),
+            client_date=(manager_client_dt or datetime.now()).strftime("%Y-%m-%d")
+        )
     except Exception as e:
         st.error("오늘 작업 목록을 불러오지 못했습니다.")
         st.write(str(e))
@@ -5293,6 +5325,46 @@ def show_manager_dashboard():
             except Exception as e:
                 st.error("TBM 회의록 생성 실패")
                 st.write(str(e))
+
+    st.markdown('<div class="manager-section-title">내일 예정된 작업</div>', unsafe_allow_html=True)
+
+    try:
+        tomorrow_date = ((manager_client_dt or datetime.now()) + timedelta(days=1)).strftime("%Y-%m-%d")
+        tomorrow_tasks = get_work_tasks_by_date(st.session_state.get("team_id", ""), tomorrow_date)
+    except Exception as e:
+        st.error("내일 예정된 작업 목록을 불러오지 못했습니다.")
+        st.write(str(e))
+        tomorrow_tasks = []
+
+    if not tomorrow_tasks:
+        st.caption("내일 예정된 작업이 없습니다.")
+    else:
+        for task in tomorrow_tasks:
+
+            task_workers = ", ".join(task.get("assigned_workers") or [])
+
+            tomorrow_task_card_html = f"""
+    <div class="log-card">
+    <div class="log-top-row">
+    <div class="log-work-name">{task.get("work_name", "-")}</div>
+    <span class="status-badge status-progress">
+    📅 내일 예정 · {task.get("scheduled_time", "-")}
+    </span>
+    </div>
+
+    <div class="log-meta">
+    작업내용: {task.get("work_content", "-")}<br>
+    작업장소: {task.get("work_location", "-")}<br>
+    TBM 장소: {task.get("tbm_place", "-")}<br>
+    작업자: {task_workers}
+    </div>
+    </div>
+    """
+
+            st.markdown(
+                tomorrow_task_card_html,
+                unsafe_allow_html=True
+            )
 
     st.markdown('<div class="manager-section-title">작업자 관리</div>', unsafe_allow_html=True)
 
