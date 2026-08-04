@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -3253,8 +3253,12 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
     if leader_log is None and logs:
         leader_log = logs[0]
 
-    # TBM 리더가 "제출하기"를 누른 시각(tbm_end_time)을 TBM 일시로 사용
-    tbm_end = leader_log.get("tbm_end_time", "") if leader_log else ""
+    # TBM 일시 = 그날 작업자 중 TBM을 가장 먼저 "제출하기"한 시각
+    # (work_tasks.first_tbm_submitted_at, show_journal()에서 최초 1회만 기록됨).
+    # 이 값이 없는 과거 작업(마이그레이션 이전 데이터)은 TBM 리더의 제출 시각으로 대체한다.
+    tbm_end = task.get("first_tbm_submitted_at") or (
+        leader_log.get("tbm_end_time", "") if leader_log else ""
+    )
 
     tbm_datetime = ""
     try:
@@ -4452,6 +4456,9 @@ def show_journal():
 
     render_topbar("journal", "Safety TBM", "journal-app-title", back_page="checklist", help_key="journal")
 
+    # 작업자 기기(브라우저)의 로컬 시각. "제출하기" 클릭 시 TBM 제출 시각으로 기록한다.
+    client_dt = get_client_datetime()
+
     # =========================
     # 데이터 불러오기
     # =========================
@@ -4542,8 +4549,26 @@ def show_journal():
 
     if st.button("📤 제출하기", use_container_width=True):
 
+        # 작업자 기기의 로컬 시각(get_client_datetime)을 우선 사용하고,
+        # 아직 브라우저 값이 도착하지 않았으면 서버 시각으로 대체한다.
+        submit_dt = client_dt or datetime.now()
+        submit_time_str = submit_dt.strftime("%Y-%m-%d %H:%M:%S")
+
         if st.session_state.work_data.get("TBM리더여부", False):
-            st.session_state.work_data["TBM종료시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.work_data["TBM종료시간"] = submit_time_str
+
+        # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
+        # IS NULL 조건으로 갱신하므로, 이미 값이 기록되어 있으면(=다른 작업자가 먼저 제출) 덮어쓰지 않는다.
+        task_id_for_first_submit = st.session_state.work_data.get("task_id", "")
+        if task_id_for_first_submit:
+            try:
+                supabase.table("work_tasks").update(
+                    {"first_tbm_submitted_at": submit_time_str}
+                ).eq("id", task_id_for_first_submit).is_(
+                    "first_tbm_submitted_at", "null"
+                ).execute()
+            except Exception as e:
+                print("first_tbm_submitted_at 업데이트 오류:", e)
 
         log_data = {
             "팀ID": st.session_state.get("team_id", ""),
@@ -4569,7 +4594,7 @@ def show_journal():
 
             "task_id": st.session_state.work_data.get("task_id", ""),
 
-            "제출시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "제출시간": submit_time_str,
             "제출상태": "제출완료"
         }
 
