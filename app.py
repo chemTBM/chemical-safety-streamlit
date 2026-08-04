@@ -636,6 +636,16 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
     height: 44px;
 }
 
+.wheel-picker-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}
+
+.wheel-picker-col {
+    width: 90px;
+}
+
 .selected-chip {
     display: inline-flex;
     align-items: center;
@@ -4695,9 +4705,32 @@ def show_journal():
 
     show_bottom_nav()
 
-def render_wheel_picker(dom_id, min_val, max_val, current_value, js_key):
+def _wheel_picker_html(dom_id, min_val, max_val):
     """
-    시/분처럼 정수 범위를 세로 휠 피커(숫자 목록이 세로로 스크롤되며 스냅되는 방식)로 선택한다.
+    휠 피커(숫자 목록이 세로로 스크롤되며 스냅되는 방식)의 HTML만 만들어 반환한다.
+    값을 읽어오는 부분은 _wheel_picker_scroll_value()가 담당한다 — 시/분 두 휠을
+    한 줄에 나란히 배치하려면 HTML을 하나의 st.markdown 호출로 묶어야 하는데,
+    스크롤 값 읽기는 휠마다 별도의 streamlit_js_eval 호출이 필요해서 둘을 분리했다.
+    """
+    items_html = "".join(
+        f'<div class="wheel-picker-item">{v:02d}</div>' for v in range(min_val, max_val + 1)
+    )
+
+    return (
+        '<div class="wheel-picker-wrap">'
+        '<div class="wheel-picker-highlight"></div>'
+        f'<div class="wheel-picker-scroll" id="{dom_id}">'
+        '<div class="wheel-picker-pad"></div>'
+        f'{items_html}'
+        '<div class="wheel-picker-pad"></div>'
+        '</div>'
+        '</div>'
+    )
+
+
+def _wheel_picker_scroll_value(dom_id, min_val, max_val, current_value, js_key):
+    """
+    _wheel_picker_html()로 이미 그려진 휠 피커의 스크롤 위치를 읽어 현재 선택값을 반환한다.
     Streamlit에는 이런 위젯이 내장되어 있지 않아서, CSS scroll-snap으로 스크롤/스냅 동작을
     구현하고 streamlit_js_eval로 parent 문서(실제 앱 페이지)의 스크롤 위치를 읽어와 값으로 바꾼다.
     스크롤 리스너는 parent 문서의 DOM에 직접 붙기 때문에, JS 표현식 문자열이 매번 바뀌면
@@ -4707,23 +4740,6 @@ def render_wheel_picker(dom_id, min_val, max_val, current_value, js_key):
     값이 갱신된다).
     """
     item_height = 44
-    items_html = "".join(
-        f'<div class="wheel-picker-item">{v:02d}</div>' for v in range(min_val, max_val + 1)
-    )
-
-    st.markdown(
-        f"""
-<div class="wheel-picker-wrap">
-    <div class="wheel-picker-highlight"></div>
-    <div class="wheel-picker-scroll" id="{dom_id}">
-        <div class="wheel-picker-pad"></div>
-        {items_html}
-        <div class="wheel-picker-pad"></div>
-    </div>
-</div>
-""",
-        unsafe_allow_html=True
-    )
 
     init_key = f"_{js_key}_initial_idx"
     if init_key not in st.session_state:
@@ -4835,25 +4851,36 @@ def show_task_create():
     st.markdown('<div class="field-label">작업 시작 시간</div>', unsafe_allow_html=True)
 
     _now_local = datetime.now()
-    col_hour, col_minute = st.columns(2)
 
-    with col_hour:
-        st.markdown('<div class="wheel-picker-label">시</div>', unsafe_allow_html=True)
-        tc_start_hour = render_wheel_picker(
-            "tc-hour-wheel", 0, 23,
-            st.session_state.get("tc_start_hour_val", _now_local.hour),
-            "tc_start_hour_wheel"
-        )
-        st.session_state["tc_start_hour_val"] = tc_start_hour
+    _hour_default = st.session_state.get("tc_start_hour_val", _now_local.hour)
+    _minute_default = st.session_state.get("tc_start_minute_val", _now_local.minute)
 
-    with col_minute:
-        st.markdown('<div class="wheel-picker-label">분</div>', unsafe_allow_html=True)
-        tc_start_minute = render_wheel_picker(
-            "tc-minute-wheel", 0, 59,
-            st.session_state.get("tc_start_minute_val", _now_local.minute),
-            "tc_start_minute_wheel"
-        )
-        st.session_state["tc_start_minute_val"] = tc_start_minute
+    # 시/분 휠 피커를 st.columns가 아니라 flex CSS로 직접 나란히 배치한다.
+    # 이 앱은 max-width: 480px짜리 모바일 폭 레이아웃이라, st.columns를 쓰면
+    # Streamlit이 컬럼을 좁다고 판단해 자동으로 세로로 쌓아버린다.
+    st.markdown(
+        '<div class="wheel-picker-row">'
+        '<div class="wheel-picker-col">'
+        '<div class="wheel-picker-label">시</div>'
+        f'{_wheel_picker_html("tc-hour-wheel", 0, 23)}'
+        '</div>'
+        '<div class="wheel-picker-col">'
+        '<div class="wheel-picker-label">분</div>'
+        f'{_wheel_picker_html("tc-minute-wheel", 0, 59)}'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    tc_start_hour = _wheel_picker_scroll_value(
+        "tc-hour-wheel", 0, 23, _hour_default, "tc_start_hour_wheel"
+    )
+    st.session_state["tc_start_hour_val"] = tc_start_hour
+
+    tc_start_minute = _wheel_picker_scroll_value(
+        "tc-minute-wheel", 0, 59, _minute_default, "tc_start_minute_wheel"
+    )
+    st.session_state["tc_start_minute_val"] = tc_start_minute
 
     tc_start_time = dt_time(tc_start_hour, tc_start_minute)
 
