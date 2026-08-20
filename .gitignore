@@ -1,0 +1,9 @@
+.streamlit/secrets.toml
+__pycache__/
+*.log
+/cd
+/streamlit
+app_backup.py
+app_ui구성완료.py
+app - 복사본 (2).py
+safety_tbm_work_logs.csv

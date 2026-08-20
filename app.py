@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -120,6 +120,31 @@ final_result = pd.read_excel(
 
 final_result.columns = final_result.columns.str.strip()
 final_result.columns = final_result.columns.str.strip()
+
+ACCIDENT_ARCHIVE_PATH = "한국산업안전보건공단_산업재해 고위험요인 아카이브_20260401.xlsx"
+ACCIDENT_ARCHIVE_COLUMNS = ["재해개요", "기인물", "고위험작업·상황", "재해유발요인", "위험성 감소대책(예시)"]
+
+
+@st.cache_data
+def load_accident_archive():
+    """산업재해 고위험요인 아카이브(제조업등 시트)를 불러온다.
+    3번째 행이 실제 헤더라 header=2로 읽는다. AI 프롬프트 참고자료로만 쓰이며
+    앱 실행 중 반복 로드를 피하기 위해 st.cache_data로 캐싱한다."""
+    df = pd.read_excel(
+        ACCIDENT_ARCHIVE_PATH,
+        sheet_name="아카이브(제조업등)",
+        header=2
+    )
+
+    df = df.dropna(subset=["재해개요"]).reset_index(drop=True)
+
+    for col in ACCIDENT_ARCHIVE_COLUMNS:
+        df[col] = df[col].astype(str).str.strip()
+
+    return df
+
+
+accident_archive_df = load_accident_archive()
 
 # 엑셀 컬럼명 앞뒤 공백 제거
 risk_message_df.columns = risk_message_df.columns.str.strip()
@@ -2744,22 +2769,148 @@ def get_risk_and_measure_messages(result):
     work_measure_items[:5]
 )
 
+# =========================
+# 산업재해 아카이브 참고자료 검색
+# (hazard_mapping.xlsx 매칭 로직과 별개로, AI 프롬프트에 추가로 참고시킬
+#  실제 산업재해 사례 3건을 키워드 매칭으로 추려낸다.)
+# =========================
+
+_ARCHIVE_STOPWORDS = {"작업", "관련", "등", "및", "위한", "대한", "작업중", "중"}
+
+# hazard_mapping.xlsx의 물질군(hazard_scores 키)을 아카이브 "기인물" 표현으로 매핑.
+# 기인물 컬럼은 "화학물질(황산)", "인화성물질(톨루엔)"처럼 분류+물질명 조합이지만,
+# 실제 값을 전수 확인한 결과 "인화성물질"/"유해가스"/"화학물질" 세 표현만 쓰이고
+# "부식성"·"독성"·"산화성"·"고압가스" 같은 표현은 존재하지 않는다. 따라서 실제
+# 아카이브에 있는 표현으로만 매핑해야 검색이 의미가 있다.
+_HAZARD_GROUP_TO_ARCHIVE_KEYWORDS = {
+    "금속부식성 물질": ["화학물질"],
+    "급성독성(흡입)": ["유해가스", "화학물질"],
+    "인체독성": ["화학물질", "유해가스"],
+    "인화성": ["인화성물질"],
+    "산화성": ["화학물질"],
+    "고압가스": ["유해가스", "화학물질"],
+    "급성 수생환경 유해성": ["화학물질"],
+    "자연발화 및 과산화물": ["인화성물질", "화학물질"],
+}
+
+
+def _extract_archive_keywords(text, min_len=2):
+    tokens = re.split(r"[\s/,()\[\]·\-]+", str(text or ""))
+    return [
+        t.strip() for t in tokens
+        if len(t.strip()) >= min_len and t.strip() not in _ARCHIVE_STOPWORDS
+    ]
+
+
+def get_archive_reference_cases(work_name, chem_name, hazard_scores, top_n=3):
+    """작업명·취급물질을 기준으로 산업재해 아카이브에서 관련성 높은 사례를 찾는다.
+    프롬프트 비용 관리를 위해 최대 top_n건만 반환하고, 관련 사례가 없으면 빈 리스트를 준다."""
+    df = accident_archive_df
+
+    if df is None or df.empty:
+        return []
+
+    work_keywords = _extract_archive_keywords(work_name)
+
+    material_keywords = set()
+    chem_name_clean = str(chem_name or "").strip()
+
+    if chem_name_clean and chem_name_clean.lower() != "nan":
+        material_keywords.add(chem_name_clean)
+        # "메틸 알코올"처럼 공백이 섞인 정식 화학물질명은 기인물 표기와
+        # 그대로 일치하지 않는 경우가 많아, 공백 기준 조각도 함께 추가한다.
+        for token in chem_name_clean.split():
+            if len(token) >= 2:
+                material_keywords.add(token)
+
+    for hazard_name, score in (hazard_scores or {}).items():
+        try:
+            score_value = float(score)
+        except Exception:
+            score_value = 0
+
+        if score_value > 0:
+            for kw in _HAZARD_GROUP_TO_ARCHIVE_KEYWORDS.get(str(hazard_name).strip(), []):
+                material_keywords.add(kw)
+
+    if not work_keywords and not material_keywords:
+        return []
+
+    work_text = df["재해개요"] + " " + df["고위험작업·상황"]
+    origin_text = df["기인물"]
+
+    work_score = pd.Series(0, index=df.index)
+    for kw in work_keywords:
+        work_score = work_score + work_text.str.contains(re.escape(kw), na=False).astype(int)
+
+    material_score = pd.Series(0, index=df.index)
+    for kw in material_keywords:
+        material_score = material_score + origin_text.str.contains(re.escape(kw), na=False).astype(int)
+
+    # 물질(기인물) 일치가 작업명 키워드 일치보다 더 신뢰도 높은 신호라 가중치를 더 준다.
+    total_score = work_score.astype(float) + (material_score.astype(float) * 1.5)
+
+    scored_df = df.assign(_score=total_score)
+    scored_df = scored_df[scored_df["_score"] > 0].sort_values("_score", ascending=False)
+
+    cases = []
+    for _, row in scored_df.head(top_n).iterrows():
+        cases.append({
+            "재해개요": row["재해개요"][:100],
+            "고위험작업·상황": row["고위험작업·상황"][:40],
+            "재해유발요인": row["재해유발요인"][:120],
+            "위험성감소대책": row["위험성 감소대책(예시)"][:120],
+        })
+
+    return cases
+
+
+def format_archive_reference_text(cases):
+    if not cases:
+        return "관련 산업재해 사례 없음"
+
+    lines = []
+    for i, case in enumerate(cases, 1):
+        lines.append(
+            f"{i}) 재해개요: {case['재해개요']}\n"
+            f"   재해유발요인: {case['재해유발요인']}\n"
+            f"   위험성 감소대책: {case['위험성감소대책']}"
+        )
+
+    return "\n".join(lines)
+
+
 def generate_ai_text(
     material_risk_items,
     work_risk_items,
     material_measure_items,
     work_measure_items,
-    similar_text
+    similar_text,
+    archive_reference_text="관련 산업재해 사례 없음",
+    work_name="",
+    work_content=""
 ):
     material_risk_source = "\n".join(material_risk_items)
     work_risk_source = "\n".join(work_risk_items)
     material_measure_source = "\n".join(material_measure_items)
     work_measure_source = "\n".join(work_measure_items)
 
+    work_name_text = work_name.strip() if work_name else "정보 없음"
+    work_content_text = work_content.strip() if work_content else "정보 없음"
+
     prompt = f"""
 너는 화학안전 TBM 전문가다.
 
 아래 원문을 바탕으로 작업 전 TBM 안내문을 작성하라.
+
+[이번 작업 정보]
+작업명: {work_name_text}
+작업내용: {work_content_text}
+
+[이번 작업 반영 원칙]
+- 이번 작업의 핵심은 위 [이번 작업 정보]다. 아래 참고자료(물질 위험성 DB, 산업재해 사례)는 이 작업을 뒷받침하는 보조 자료로만 활용할 것
+- 참고자료 중에서도 [이번 작업 정보]의 작업명·작업내용에 등장하는 설비·행위(예: 펌프·회전체, 밸브, 배관, 탱크, 용접 등)와 직접 관련된 항목을 최우선으로 골라 반영할 것
+- 참고자료가 일반적인 배관·밸브 위주 내용이더라도, 작업명이 가리키는 실제 설비 특성(예: 회전체·베어링·커플링 등 펌프 관련 위험)이 있다면 그 특성을 위험요인/안전대책에 반드시 반영할 것
 
 [공통 작성 원칙]
 - 제공된 원문 내용만 사용할 것
@@ -2769,13 +2920,18 @@ def generate_ai_text(
 - 어려운 전문용어 사용을 최소화할 것
 - 작업자가 바로 이해할 수 있도록 짧고 명확하게 작성할 것
 
+[참고자료 활용 원칙]
+- [참고자료 1] 물질/작업 위험성 DB와 [참고자료 2] 실제 산업재해 사례를 모두 고려하여 이 작업의 위험요인과 안전대책을 구체적으로 작성할 것
+- [참고자료 2]는 실제 사고 사례이므로, 유사한 사고 흐름(끼임·누출·낙하 등 사고 유형)이 있다면 위험요인 작성에 반영할 것
+- [참고자료 2]에 관련 사례가 없다고 나오면 [참고자료 1]만으로 작성할 것
+
 [AI 주요 위험요인 작성 원칙]
 - 물질군 위험요인과 작업유형 위험요인을 따로 나열하지 말 것
 - 반드시 물질의 위험성과 작업유형의 위험상황을 한 문장 안에서 연결해서 설명할 것
 - 특정 화학물질명, 제품명, CAS 번호를 사용하지 말 것
-- 특정 작업명이나 사용자가 입력한 작업명을 사용하지 말 것
+- [이번 작업 정보]의 작업명·작업내용 문장을 그대로 베껴 쓰지 말 것 (단, 그 안에 담긴 설비·행위 특성은 위험상황 설명에 반영할 것)
 - 물질명 대신 부식성, 인화성, 독성, 산화성 등 유해·위험 특성으로 표현할 것
-- 작업명 대신 설비 개방, 연결부 분리, 잔압 제거, 누출, 비산 등 실제 위험상황으로 표현할 것
+- 작업명을 문장 그대로 반복하는 대신, 설비 개방, 연결부 분리, 잔압 제거, 누출, 비산, 회전체 접촉 등 이번 작업에 실제로 해당하는 위험상황으로 구체적으로 표현할 것
 - “질산 취급 시”, “메탄올 작업 중”, “배관 교체 시”와 같은 문장 형식을 사용하지 말 것
 - 일반적인 화학안전 설명보다 현재 작업상황 중심으로 작성할 것
 - 개별 위험요인을 단순 나열하지 말고 작업 흐름처럼 연결해서 설명할 것
@@ -2785,9 +2941,10 @@ def generate_ai_text(
 [안전 및 예방조치 작성 원칙]
 - 작업자가 바로 실행할 수 있는 행동 중심으로 작성할 것
 - 물질 특성과 작업유형 상황을 함께 고려한 예방조치로 작성할 것
-- 특정 화학물질명이나 특정 작업명을 사용하지 말 것
+- 특정 화학물질명을 사용하지 말 것
+- [이번 작업 정보]의 작업명·작업내용 문장을 그대로 베껴 쓰지 말 것 (단, 그 안에 담긴 설비·행위 특성은 조치에 반영할 것)
 - 물질명 대신 해당 물질의 유해·위험 특성을 사용하여 작성할 것
-- 작업명 대신 작업 단계, 설비 상태 및 작업자의 행동을 중심으로 작성할 것
+- 작업명을 문장 그대로 반복하는 대신, 이번 작업의 설비 상태 및 작업자의 행동을 중심으로 구체적으로 작성할 것
 - 각 항목은 최대 3개까지만 작성할 것
 - 한 문장에는 최대 2개의 조치만 포함할 것
 
@@ -2801,6 +2958,8 @@ def generate_ai_text(
 - 새로운 사고내용 생성 금지
 
 
+[참고자료 1] 물질/작업 위험성 DB
+
 [물질군 유해위험요인]
 {material_risk_source}
 
@@ -2812,6 +2971,9 @@ def generate_ai_text(
 
 [작업유형 안전대책]
 {work_measure_source}
+
+[참고자료 2] 실제 산업재해 사례 (한국산업안전보건공단 아카이브)
+{archive_reference_text}
 
 [유사사고 원문]
 {similar_text}
@@ -2984,6 +3146,59 @@ def create_work_task(
     return result.data
 
 
+def get_work_templates(team_id):
+    if not team_id:
+        return []
+
+    result = (
+        supabase.table("work_templates")
+        .select("*")
+        .eq("team_id", team_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return result.data if result.data else []
+
+
+def create_work_template(
+    team_id,
+    team_name,
+    template_name,
+    work_name,
+    work_content,
+    work_location,
+    tbm_place,
+    work_type_code,
+    work_type_display,
+    material_name
+):
+    data = {
+        "team_id": team_id,
+        "team_name": team_name,
+        "template_name": template_name,
+        "work_name": work_name,
+        "work_content": work_content,
+        "work_location": work_location,
+        "tbm_place": tbm_place,
+        "work_type_code": work_type_code,
+        "work_type_display": work_type_display,
+        "material_name": material_name,
+    }
+
+    result = (
+        supabase.table("work_templates")
+        .insert(data)
+        .execute()
+    )
+
+    return result.data
+
+
+def delete_work_template(template_id):
+    supabase.table("work_templates").delete().eq("id", template_id).execute()
+
+
 def get_team_workers(team_id):
     if not team_id:
         return []
@@ -3034,6 +3249,26 @@ def get_all_work_tasks(team_id):
     )
 
     return result.data if result.data else []
+
+def get_recent_past_work_tasks(team_id, today_str, days=7):
+    """오늘을 제외한, 최근 days일 이내(work_date가 [오늘-days, 오늘) 범위) 작업을
+    work_date 내림차순(최근 지난 작업이 먼저)으로 반환한다."""
+    if not team_id:
+        return []
+
+    cutoff_dt = datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=days)
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%d")
+
+    all_tasks = get_all_work_tasks(team_id)
+
+    past_tasks = [
+        t for t in all_tasks
+        if t.get("work_date") and cutoff_str <= t.get("work_date") < today_str
+    ]
+
+    past_tasks.sort(key=lambda t: t.get("work_date", ""), reverse=True)
+
+    return past_tasks
 
 def _set_cell_lines(cell, lines):
     """빈 병합 셀에 여러 줄을 문단 단위로 채워 넣는다."""
@@ -4106,12 +4341,23 @@ def run_ai_hazard_analysis(result, current_month=None):
     else:
         similar_text = "유사사고 정보 없음"
 
+    archive_cases = get_archive_reference_cases(
+        work_name=result.get("작업명", ""),
+        chem_name=result.get("chem_name", ""),
+        hazard_scores=result.get("hazard_scores", {}),
+        top_n=3
+    )
+    archive_reference_text = format_archive_reference_text(archive_cases)
+
     ai_result = generate_ai_text(
         material_risk_items,
         work_risk_items,
         material_measure_items,
         work_measure_items,
-        similar_text
+        similar_text,
+        archive_reference_text=archive_reference_text,
+        work_name=result.get("작업명", ""),
+        work_content=result.get("작업내용", "")
     )
 
     ai_sections = parse_ai_result(ai_result)
@@ -4798,6 +5044,72 @@ def show_task_create():
 
     workers = get_team_workers(st.session_state.get("team_id", ""))
 
+    work_type_options = [
+        "정기작업",
+        "비작업(순찰·경비)",
+        "유지보수",
+        "화기작업",
+        "시운전·정지",
+        "세척작업"
+    ]
+
+    work_type_map = {
+        "정기작업": "ROUTINE",
+        "비작업(순찰·경비)": "IDLE",
+        "유지보수": "MAINTENANCE",
+        "화기작업": "HOT_WORK",
+        "시운전·정지": "STARTUP_SHUTDOWN",
+        "세척작업": "CLEANING"
+    }
+
+    # =========================
+    # 저장된 작업 템플릿 불러오기 / 삭제
+    # =========================
+    templates = get_work_templates(st.session_state.get("team_id", ""))
+
+    if templates:
+        st.markdown('<div class="manager-section-title">저장된 작업 불러오기</div>', unsafe_allow_html=True)
+
+        template_options = {t["template_name"]: t for t in templates}
+
+        tc_selected_template_name = st.selectbox(
+            "불러올 템플릿 선택",
+            list(template_options.keys()),
+            key="tc_template_select"
+        )
+
+        tc_load_col, tc_delete_col = st.columns(2)
+
+        with tc_load_col:
+            tc_load_clicked = st.button("📥 불러오기", key="tc_load_template_btn", use_container_width=True)
+
+        with tc_delete_col:
+            tc_delete_clicked = st.button("🗑️ 삭제", key="tc_delete_template_btn", use_container_width=True)
+
+        if tc_load_clicked:
+            _template = template_options[tc_selected_template_name]
+
+            st.session_state["tc_work_name"] = _template.get("work_name") or ""
+            st.session_state["tc_work_content"] = _template.get("work_content") or ""
+            st.session_state["tc_work_location"] = _template.get("work_location") or ""
+            st.session_state["tc_tbm_place"] = _template.get("tbm_place") or ""
+
+            if _template.get("work_type_display") in work_type_options:
+                st.session_state["tc_work_type"] = _template.get("work_type_display")
+
+            # streamlit_searchbox는 key가 이미 session_state에 있으면 default를 무시하므로,
+            # key를 지워서 다음 렌더링에서 default_searchterm으로 다시 초기화되게 한다.
+            st.session_state.pop("tc_chemical_searchbox", None)
+            st.session_state["tc_chem_pending_default"] = _template.get("material_name") or ""
+
+            st.success(f"'{tc_selected_template_name}' 템플릿을 불러왔습니다. 작업 시간을 입력해 주세요.")
+            st.rerun()
+
+        if tc_delete_clicked:
+            delete_work_template(template_options[tc_selected_template_name]["id"])
+            st.success(f"'{tc_selected_template_name}' 템플릿을 삭제했습니다.")
+            st.rerun()
+
     tc_register_tomorrow = st.checkbox(
         "내일 작업을 미리 등록합니다",
         key="tc_register_tomorrow"
@@ -4832,15 +5144,6 @@ def show_task_create():
         placeholder="예: 현장 작업구역 앞",
         key="tc_tbm_place"
     )
-
-    work_type_options = [
-        "정기작업",
-        "비작업(순찰·경비)",
-        "유지보수",
-        "화기작업",
-        "시운전·정지",
-        "세척작업"
-    ]
 
     tc_work_type_display = st.selectbox(
         "작업 유형",
@@ -4884,12 +5187,27 @@ def show_task_create():
 
     tc_start_time = dt_time(tc_start_hour, tc_start_minute)
 
-    tc_chemical = st_searchbox(
-        search_chemical_candidates,
-        key="tc_chemical_searchbox",
-        placeholder="화학물질명을 입력하세요. 예: 황산",
-        clear_on_submit=False,
-    )
+    # 템플릿을 방금 불러온 경우, streamlit_searchbox는 key가 이미 session_state에
+    # 있으면 default를 무시하므로 key를 지우고 default_searchterm으로 재초기화한다.
+    tc_chem_pending_default = st.session_state.pop("tc_chem_pending_default", None)
+
+    if tc_chem_pending_default is not None:
+        tc_chemical = st_searchbox(
+            search_chemical_candidates,
+            key="tc_chemical_searchbox",
+            placeholder="화학물질명을 입력하세요. 예: 황산",
+            clear_on_submit=False,
+            default=tc_chem_pending_default,
+            default_searchterm=tc_chem_pending_default,
+            default_use_searchterm=True,
+        )
+    else:
+        tc_chemical = st_searchbox(
+            search_chemical_candidates,
+            key="tc_chemical_searchbox",
+            placeholder="화학물질명을 입력하세요. 예: 황산",
+            clear_on_submit=False,
+        )
 
     tc_risk_assessment_done = st.checkbox(
         "위험성평가 실시",
@@ -4903,14 +5221,43 @@ def show_task_create():
         key="tc_assigned_workers"
     )
 
-    work_type_map = {
-        "정기작업": "ROUTINE",
-        "비작업(순찰·경비)": "IDLE",
-        "유지보수": "MAINTENANCE",
-        "화기작업": "HOT_WORK",
-        "시운전·정지": "STARTUP_SHUTDOWN",
-        "세척작업": "CLEANING"
-    }
+    # =========================
+    # 작업을 템플릿으로 저장
+    # =========================
+    tc_save_as_template = st.checkbox("이 작업을 템플릿으로 저장", key="tc_save_as_template")
+
+    if tc_save_as_template:
+        tc_template_name = st.text_input(
+            "템플릿 이름",
+            placeholder="예: 정기 배관 점검",
+            key="tc_template_name"
+        )
+
+        if st.button("💾 템플릿 저장", key="tc_save_template_btn", use_container_width=True):
+
+            if not tc_template_name.strip():
+                st.warning("템플릿 이름을 입력해 주세요.")
+            elif not tc_work_name.strip():
+                st.warning("작업명을 입력해 주세요.")
+            else:
+                create_work_template(
+                    team_id=st.session_state.get("team_id", ""),
+                    team_name=st.session_state.get("team_name", ""),
+                    template_name=tc_template_name.strip(),
+                    work_name=tc_work_name.strip(),
+                    work_content=tc_work_content.strip(),
+                    work_location=tc_work_location.strip(),
+                    tbm_place=tc_tbm_place.strip(),
+                    work_type_code=work_type_map[tc_work_type_display],
+                    work_type_display=tc_work_type_display,
+                    material_name=str(tc_chemical).strip() if tc_chemical else ""
+                )
+                st.success(f"'{tc_template_name.strip()}' 템플릿이 저장되었습니다.")
+                st.session_state.pop("tc_template_name", None)
+                # 체크박스는 이미 이 실행에서 인스턴스화됐으므로 값 대입이 아니라
+                # 키를 지워서 다음 렌더링에서 기본값(False)으로 재초기화되게 한다.
+                st.session_state.pop("tc_save_as_template", None)
+                st.rerun()
 
     if st.button("⚠️ 위험도 분석하기", key="tc_analyze_btn", use_container_width=True):
 
@@ -4949,6 +5296,10 @@ def show_task_create():
             # 매칭하므로 결과 dict에 넣어준다 (이게 빠져 있어서 유사사고사례가
             # 항상 "없음"으로 나왔던 원인 중 하나였다).
             result["작업유형"] = tc_work_type_display
+            # get_archive_reference_cases가 작업명 키워드로 아카이브를 검색하고,
+            # generate_ai_text가 [이번 작업 정보]에 원문 그대로 넣어주므로 채워준다.
+            result["작업명"] = tc_work_name.strip()
+            result["작업내용"] = tc_work_content.strip()
 
             # 유사사고사례의 "월" 기준은 작업 시작시간이 아니라 안전관리자
             # 기기의 현재 접속 시각으로 판정한다.
@@ -5267,6 +5618,43 @@ def show_manager_dashboard():
     font-size: 13px;
     color: #45474c;
 }
+
+.tbm-history-row {
+    padding: 0;
+    line-height: 1.3;
+}
+
+.tbm-history-date {
+    font-size: 13px;
+    color: #45474c;
+}
+
+.tbm-history-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #091426;
+}
+
+div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 0 !important;
+}
+
+.st-key-tbm_history_list button[data-testid="stBaseButton-secondary"] {
+    padding: 0.1rem 0.5rem;
+    height: auto;
+    min-height: 0;
+    line-height: 1.3;
+}
+
+.st-key-tbm_history_list div[data-testid="stVerticalBlock"] {
+    gap: 0.1rem;
+}
+
+.st-key-tbm_history_list div[data-testid="stElementContainer"] {
+    margin: 0 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -5522,6 +5910,70 @@ def show_manager_dashboard():
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+    st.markdown('<div class="manager-section-title">TBM 이력</div>', unsafe_allow_html=True)
+
+    try:
+        past_tasks = get_recent_past_work_tasks(
+            st.session_state.get("team_id", ""),
+            today_str=(manager_client_dt or datetime.now()).strftime("%Y-%m-%d"),
+            days=7
+        )
+    except Exception as e:
+        st.error("TBM 이력을 불러오지 못했습니다.")
+        st.write(str(e))
+        past_tasks = []
+
+    if not past_tasks:
+        st.caption("최근 7일 이내 지난 작업이 없습니다.")
+    else:
+        with st.container(key="tbm_history_list"):
+            st.markdown('<hr class="tbm-history-divider">', unsafe_allow_html=True)
+
+            for task in past_tasks:
+
+                col_date, col_name, col_btn = st.columns([2, 5, 1], vertical_alignment="center")
+
+                with col_date:
+                    st.markdown(
+                        f'<div class="tbm-history-row tbm-history-date">{task.get("work_date", "-")}</div>',
+                        unsafe_allow_html=True
+                    )
+
+                with col_name:
+                    st.markdown(
+                        f'<div class="tbm-history-row tbm-history-name">{task.get("work_name", "-")}</div>',
+                        unsafe_allow_html=True
+                    )
+
+                with col_btn:
+                    try:
+                        past_log_result = (
+                            supabase.table("work_logs")
+                            .select("*")
+                            .eq("task_id", task.get("id", ""))
+                            .execute()
+                        )
+
+                        past_task_logs = past_log_result.data if past_log_result.data else []
+
+                        past_signatures_by_worker = fetch_signatures_for_task(task.get("id", ""))
+                        past_docx_file = generate_tbm_docx(task, past_task_logs, past_signatures_by_worker)
+
+                        st.download_button(
+                            label="📋",
+                            data=past_docx_file,
+                            file_name=f"TBM회의록_{task.get('work_name', '작업')}_{task.get('work_date', '')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"download_past_tbm_docx_{task.get('id')}",
+                            help="TBM 회의록 다운로드",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error("⚠️")
+                        st.write(str(e))
+
+                st.markdown('<hr class="tbm-history-divider">', unsafe_allow_html=True)
 
     st.markdown('<div class="manager-section-title">실시간 작업로그</div>', unsafe_allow_html=True)
 
