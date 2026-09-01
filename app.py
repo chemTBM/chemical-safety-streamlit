@@ -1643,6 +1643,23 @@ def render_topbar(topbar_key, title, title_class, back_page=None, help_key=None)
 
     render_topbar_spacer()
 
+def _redirect_with_message(target_page, message):
+    """앞 단계를 건너뛰고 화면에 진입했을 때, 원래 있어야 할 화면으로 돌려보내고
+    이유를 안내한다. 하단 네비게이션 버튼 클릭뿐 아니라 URL의 ?page= 쿼리파라미터로
+    직접 진입하는 경우(브라우저 뒤로가기가 사실상 히스토리 없이 동작하는 대신 남는
+    유일한 우회 경로)도 이 가드로 함께 막는다."""
+    st.session_state.pending_redirect_message = message
+    st.session_state.page = target_page
+    st.rerun()
+
+
+def _flash_pending_message():
+    """직전 rerun에서 _redirect_with_message가 남긴 안내 메시지를 한 번만 보여준다."""
+    message = st.session_state.pop("pending_redirect_message", None)
+    if message:
+        st.warning(message)
+
+
 def show_team_access():
 
     # Material Icons
@@ -1764,6 +1781,8 @@ div.stButton > button {
 
 </style>
 """, unsafe_allow_html=True)
+
+    _flash_pending_message()
 
     # 상단 팀 생성 버튼
     st.markdown("""
@@ -1888,10 +1907,20 @@ def _populate_worker_session_from_task(worker_name, selected_task, is_tbm_leader
 
 def show_login():
 
+    if not st.session_state.get("team_id"):
+        st.warning("팀 접속 정보가 없습니다. 작업팀 접속 화면에서 다시 접속해 주세요.")
+
+        if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
+            st.session_state.page = "team_access"
+            st.rerun()
+
+        return
+
     # =========================
     # 상단바
     # =========================
     render_topbar("login", "작업 모드 선택", "create-team-app-title", back_page="team_access", help_key="login")
+    _flash_pending_message()
 
     # 접속 기기의 로컬 날짜. "오늘 작업" 목록을 서버(UTC) 날짜로 조회하면
     # 한국 시간 00시~09시 사이에는 하루 어긋난 목록이 나오므로 이걸 기준으로 삼는다.
@@ -2334,10 +2363,15 @@ def run_risk_scoring(chemical, work_type, time_slot):
 
 def show_work_input():
 
+    if not st.session_state.get("work_data", {}).get("task_id"):
+        _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
+        return
+
     # =========================
     # 상단바
     # =========================
     render_topbar("input", "Safety TBM", "app-title", back_page="login", help_key="input")
+    _flash_pending_message()
 
     st.markdown("""
     <div>
@@ -2503,19 +2537,26 @@ def show_work_input():
 def show_bottom_nav():
     # <a href="?page=..."> 링크는 브라우저 풀 리로드를 유발해 st.session_state(team_id 등)가
     # 통째로 초기화되므로, st.button + st.rerun()으로 같은 세션 안에서 화면만 전환한다.
+    #
+    # 네비게이션 대상은 실제로 지금 진행 중인 흐름(작업자: task_info→checklist→journal,
+    # 안전관리자: manager→task_create)의 화면으로만 연결한다. 예전에 쓰던 수동 위험도
+    # 분석 흐름(input/result)은 현재 작업 등록 기반 흐름과 맞지 않아(위험도 재계산,
+    # AI 재호출 등) 더 이상 네비게이션 대상으로 노출하지 않는다.
 
-    current_page = st.session_state.get("page", "input")
+    current_page = st.session_state.get("page", "task_info")
     current_mode = st.session_state.get("mode", "작업자")
 
-    last_page = "manager" if current_mode == "안전관리자" else "journal"
-    last_icon = "▦" if current_mode == "안전관리자" else "✎"
-
-    nav_items = [
-        ("input", "⌂"),
-        ("result", "🚦"),
-        ("checklist", "☑"),
-        (last_page, last_icon),
-    ]
+    if current_mode == "안전관리자":
+        nav_items = [
+            ("manager", "▦"),
+            ("task_create", "📝"),
+        ]
+    else:
+        nav_items = [
+            ("task_info", "⌂"),
+            ("checklist", "☑"),
+            ("journal", "✎"),
+        ]
 
     st.markdown("""
 <style>
@@ -2537,7 +2578,7 @@ div[class*="st-key-bottomnavbar"] {
     padding: 6px !important;
 }
 
-/* 하단 네비게이션도 4개 아이콘이 항상 한 줄로 유지되어야 한다 */
+/* 하단 네비게이션 아이콘이 항상 한 줄로 유지되어야 한다 */
 div[class*="st-key-bottomnavbar"] div[data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
 }
@@ -2575,7 +2616,7 @@ div[class*="st-key-navbtnactive_"] button {
 """, unsafe_allow_html=True)
 
     with st.container(key="bottomnavbar"):
-        cols = st.columns(4)
+        cols = st.columns(len(nav_items))
         for col, (page_name, icon) in zip(cols, nav_items):
             with col:
                 key = f"navbtnactive_{page_name}" if current_page == page_name else f"navbtn_{page_name}"
@@ -4457,6 +4498,10 @@ def run_ai_hazard_analysis(result, current_month=None):
 
 
 def show_risk_result():
+    if not st.session_state.get("result", {}).get("score"):
+        _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
+        return
+
     if "ai_result" not in st.session_state:
         st.session_state.ai_result = None
 
@@ -4539,9 +4584,17 @@ def show_task_info():
     위험도를 다시 계산하지 않고, 안전관리자가 "오늘 작업 입력"에서
     미리 분석해 둔 결과(work_tasks 테이블 값)를 그대로 보여준다.
     """
-    render_topbar("task_info", "Safety TBM", "app-title", back_page="login", help_key="input")
-
     work_data = st.session_state.get("work_data", {})
+
+    # 작업모드 선택에서 작업자명/작업을 고르지 않고(예: 네비게이션이나 URL로) 곧바로
+    # 들어온 경우, 빈 화면 대신 작업모드 선택 화면으로 돌려보낸다.
+    if not (work_data.get("task_id") and work_data.get("작업자명")):
+        _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
+        return
+
+    render_topbar("task_info", "Safety TBM", "app-title", back_page="login", help_key="input")
+    _flash_pending_message()
+
     result = st.session_state.get("result", {})
 
     work_name = work_data.get("작업명", "-")
@@ -4619,9 +4672,15 @@ def show_task_info():
 
 def show_checklist():
 
-    render_topbar("checklist", "Checklist", "checklist-app-title", back_page="task_info", help_key="checklist")
-
     work_data = st.session_state.get("work_data", {})
+
+    if not (work_data.get("task_id") and work_data.get("작업자명")):
+        _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
+        return
+
+    render_topbar("checklist", "Checklist", "checklist-app-title", back_page="task_info", help_key="checklist")
+    _flash_pending_message()
+
     result = st.session_state.get("result", {})
 
     worker_name = work_data.get("작업자명", "미입력")
@@ -4852,10 +4911,17 @@ def show_journal_success_popup():
 
 def show_journal():
 
+    work_data = st.session_state.get("work_data", {})
+
+    if not (work_data.get("task_id") and work_data.get("작업자명")):
+        _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
+        return
+
     if st.session_state.get("show_journal_success_modal"):
         show_journal_success_popup()
 
     render_topbar("journal", "Safety TBM", "journal-app-title", back_page="login", help_key="journal")
+    _flash_pending_message()
 
     # 작업자 기기(브라우저)의 로컬 시각. "제출하기" 클릭 시 TBM 제출 시각으로 기록한다.
     client_dt = get_client_datetime()
@@ -4863,7 +4929,6 @@ def show_journal():
     # =========================
     # 데이터 불러오기
     # =========================
-    work_data = st.session_state.get("work_data", {})
     result = st.session_state.get("result", {})
     checklist_data = st.session_state.get("checklist_data", {})
 
@@ -4895,6 +4960,13 @@ def show_journal():
                 existing_log = existing_result.data[0]
         except Exception as e:
             print("기존 work_logs 조회 오류:", e)
+
+    # TBM 체크리스트를 아직 완료하지 않은 작업/작업자에 대해 작업일지 화면으로
+    # 곧바로 건너뛰려는 시도(네비게이션, URL 직접 진입 등)는 막고 체크리스트로 되돌린다.
+    # 단, 방금 제출을 마친 직후(성공 팝업이 뜬 상태)는 이미 완료된 상태이므로 막지 않는다.
+    if existing_log is None and not st.session_state.get("show_journal_success_modal"):
+        _redirect_with_message("checklist", "TBM 체크리스트를 먼저 완료해야 작업일지를 작성할 수 있습니다.")
+        return
 
     if existing_log:
         score = existing_log.get("risk_score")
@@ -5161,6 +5233,15 @@ def show_task_create():
         if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
             st.session_state.page = "team_access"
             st.query_params.clear()
+            st.rerun()
+
+        return
+
+    if st.session_state.get("mode") != "안전관리자":
+        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
+
+        if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
+            st.session_state.page = "login"
             st.rerun()
 
         return
@@ -5594,6 +5675,17 @@ def show_manager_dashboard():
         if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
             st.session_state.page = "team_access"
             st.query_params.clear()
+            st.rerun()
+
+        return
+
+    # team_id만으로는 안전관리자 비밀번호 인증 여부를 알 수 없다 — 작업자가 URL 등으로
+    # 이 화면에 직접 진입해 관리자 대시보드를 보는 것을 막는다.
+    if st.session_state.get("mode") != "안전관리자":
+        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
+
+        if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
+            st.session_state.page = "login"
             st.rerun()
 
         return
