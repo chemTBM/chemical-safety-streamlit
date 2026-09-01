@@ -1845,6 +1845,47 @@ SAFETY TBM SYSTEM
 </div>
 """, unsafe_allow_html=True)
 
+def _populate_worker_session_from_task(worker_name, selected_task, is_tbm_leader, leader_department, leader_position):
+    """선택된 작업(task) 정보를 work_data/result 세션에 채운다.
+    "TBM 시작"과 "작업로그 작성하기" 양쪽에서 같은 작업/작업자 정보를 동일하게 채우기 위해 공유한다."""
+    st.session_state.work_data["작업자명"] = worker_name
+    st.session_state.work_data["작업명"] = selected_task.get("work_name", "")
+    st.session_state.work_data["작업내용"] = selected_task.get("work_content", "")
+    st.session_state.work_data["작업장소"] = selected_task.get("work_location", "")
+    st.session_state.work_data["TBM장소"] = selected_task.get("tbm_place", "")
+    st.session_state.work_data["예정시간"] = selected_task.get("scheduled_time", "")
+    st.session_state.work_data["task_id"] = selected_task.get("id", "")
+
+    st.session_state.work_data["TBM리더여부"] = is_tbm_leader
+    st.session_state.work_data["리더소속"] = leader_department.strip()
+    st.session_state.work_data["리더직책"] = leader_position.strip()
+    st.session_state.work_data["리더성명"] = worker_name if is_tbm_leader else ""
+
+    # 안전관리자가 "오늘 작업 입력" 화면에서 미리 분석해 둔 위험도 결과를
+    # 그대로 가져와 보여준다 (작업자가 다시 분석하지 않음).
+    st.session_state.result = {
+        "score": selected_task.get("risk_score"),
+        "level": selected_task.get("risk_level"),
+        "chem_name": selected_task.get("chem_name"),
+        "chem_id": selected_task.get("chem_id"),
+        "작업유형": selected_task.get("work_type_display"),
+        "작업유형_모델값": selected_task.get("work_type_code"),
+        "취급물질": selected_task.get("material_name"),
+        "작업시간": selected_task.get("start_time"),
+        "작업시간대": selected_task.get("time_slot"),
+        "similar_accident_text": selected_task.get("similar_accident_text", ""),
+        "task_id": selected_task.get("id", ""),
+    }
+    st.session_state.work_data["작업유형"] = selected_task.get("work_type_display", "")
+    st.session_state.work_data["취급물질"] = selected_task.get("material_name", "")
+    st.session_state.work_data["main_hazard_1"] = selected_task.get("main_hazard_1", "")
+    st.session_state.work_data["main_hazard_2"] = selected_task.get("main_hazard_2", "")
+    st.session_state.work_data["main_hazard_3"] = selected_task.get("main_hazard_3", "")
+    st.session_state.work_data["safety_measure_1"] = selected_task.get("safety_measure_1", "")
+    st.session_state.work_data["safety_measure_2"] = selected_task.get("safety_measure_2", "")
+    st.session_state.work_data["safety_measure_3"] = selected_task.get("safety_measure_3", "")
+
+
 def show_login():
 
     # =========================
@@ -1978,47 +2019,14 @@ def show_login():
                 return
 
             st.session_state.mode = mode
-            st.session_state.work_data["작업자명"] = worker_name.strip()
-            st.session_state.work_data["작업명"] = selected_task.get("work_name", "")
-            st.session_state.work_data["작업내용"] = selected_task.get("work_content", "")
-            st.session_state.work_data["작업장소"] = selected_task.get("work_location", "")
-            st.session_state.work_data["TBM장소"] = selected_task.get("tbm_place", "")
-            st.session_state.work_data["예정시간"] = selected_task.get("scheduled_time", "")
-            st.session_state.work_data["task_id"] = selected_task.get("id", "")
+            _populate_worker_session_from_task(
+                worker_name.strip(), selected_task, is_tbm_leader, leader_department, leader_position
+            )
             st.session_state.work_data["접속모드"] = mode
             st.session_state.work_data["접속시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            st.session_state.work_data["TBM리더여부"] = is_tbm_leader
-            st.session_state.work_data["리더소속"] = leader_department.strip()
-            st.session_state.work_data["리더직책"] = leader_position.strip()
-            st.session_state.work_data["리더성명"] = worker_name.strip() if is_tbm_leader else ""
-
             if st.session_state.work_data.get("TBM리더여부", False):
                 st.session_state.work_data["TBM시작시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # 안전관리자가 "오늘 작업 입력" 화면에서 미리 분석해 둔 위험도 결과를
-            # 그대로 가져와 보여준다 (작업자가 다시 분석하지 않음).
-            st.session_state.result = {
-                "score": selected_task.get("risk_score"),
-                "level": selected_task.get("risk_level"),
-                "chem_name": selected_task.get("chem_name"),
-                "chem_id": selected_task.get("chem_id"),
-                "작업유형": selected_task.get("work_type_display"),
-                "작업유형_모델값": selected_task.get("work_type_code"),
-                "취급물질": selected_task.get("material_name"),
-                "작업시간": selected_task.get("start_time"),
-                "작업시간대": selected_task.get("time_slot"),
-                "similar_accident_text": selected_task.get("similar_accident_text", ""),
-                "task_id": selected_task.get("id", ""),
-            }
-            st.session_state.work_data["작업유형"] = selected_task.get("work_type_display", "")
-            st.session_state.work_data["취급물질"] = selected_task.get("material_name", "")
-            st.session_state.work_data["main_hazard_1"] = selected_task.get("main_hazard_1", "")
-            st.session_state.work_data["main_hazard_2"] = selected_task.get("main_hazard_2", "")
-            st.session_state.work_data["main_hazard_3"] = selected_task.get("main_hazard_3", "")
-            st.session_state.work_data["safety_measure_1"] = selected_task.get("safety_measure_1", "")
-            st.session_state.work_data["safety_measure_2"] = selected_task.get("safety_measure_2", "")
-            st.session_state.work_data["safety_measure_3"] = selected_task.get("safety_measure_3", "")
 
             st.query_params.clear()
 
@@ -2062,6 +2070,51 @@ def show_login():
             st.session_state.page = "manager"
             st.rerun()
 
+    # =========================
+    # 작업로그 작성하기 (TBM 체크리스트를 이미 완료한 작업/작업자에 대해
+    # 작업일지만 이어서 작성)
+    # =========================
+    if mode == "작업자":
+        if st.button("📝 작업로그 작성하기", key="login_journal_btn", use_container_width=True):
+
+            if not worker_name.strip():
+                st.warning("작업자명을 입력해 주세요.")
+                return
+
+            if selected_task is None:
+                st.warning("등록된 작업을 선택해 주세요.")
+                return
+
+            journal_task_id = selected_task.get("id", "")
+
+            try:
+                existing_check = (
+                    supabase.table("work_logs")
+                    .select("id")
+                    .eq("task_id", journal_task_id)
+                    .eq("worker_name", worker_name.strip())
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as e:
+                st.error("작업 기록 조회 중 오류가 발생했습니다.")
+                st.write(str(e))
+                return
+
+            if not existing_check.data:
+                st.warning("먼저 TBM 체크리스트를 완료해야 작업로그를 작성할 수 있습니다.")
+                return
+
+            st.session_state.mode = mode
+            _populate_worker_session_from_task(
+                worker_name.strip(), selected_task, is_tbm_leader, leader_department, leader_position
+            )
+            st.session_state.work_data["접속모드"] = mode
+
+            st.query_params.clear()
+
+            st.session_state.page = "journal"
+            st.rerun()
 
     show_bottom_nav()
     # =========================
@@ -3338,6 +3391,28 @@ def upload_signature(task_id, team_id, worker_name, png_bytes):
         return None
 
 
+def upsert_work_log(fields, task_id, worker_name):
+    """TBM 체크리스트 완료 → 작업일지 제출, 두 단계에 걸쳐 채워지는 work_logs 레코드를
+    하나로 유지한다. (task_id, worker_name) 조합으로 기존 행을 찾아 있으면 갱신하고,
+    없으면 새로 만든다 (체크리스트 단계에서 먼저 만들고, 작업일지 제출 단계에서 갱신)."""
+    existing = (
+        supabase.table("work_logs")
+        .select("id")
+        .eq("task_id", task_id)
+        .eq("worker_name", worker_name)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        row_id = existing.data[0]["id"]
+        supabase.table("work_logs").update(fields).eq("id", row_id).execute()
+        return row_id
+
+    inserted = supabase.table("work_logs").insert(fields).execute()
+    return inserted.data[0]["id"] if inserted.data else None
+
+
 def fetch_signatures_for_task(task_id):
     """작업(task_id)에 대해 제출된 서명 이미지를 작성자명 기준으로 내려받는다."""
     signatures_by_worker = {}
@@ -4547,11 +4622,19 @@ def show_checklist():
     render_topbar("checklist", "Checklist", "checklist-app-title", back_page="task_info", help_key="checklist")
 
     work_data = st.session_state.get("work_data", {})
+    result = st.session_state.get("result", {})
+
     worker_name = work_data.get("작업자명", "미입력")
     work_name = work_data.get("작업명", "미입력")
     work_location = work_data.get("작업장소", "미입력")
     work_type = work_data.get("작업유형", "미입력")
-    current_date = (get_client_datetime() or datetime.now()).strftime("%Y년 %m월 %d일")
+    chemical = work_data.get("취급물질", "미입력")
+    score = result.get("score", None)
+    level = result.get("level", "미산정")
+
+    client_dt = get_client_datetime()
+    current_date = (client_dt or datetime.now()).strftime("%Y년 %m월 %d일")
+    work_time = work_data.get("작업시간") or (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M")
 
     checklist_info_html = f'<div class="checklist-info-card"><div class="checklist-badge">DAILY INSPECTION</div><div class="checklist-title">작업 전 안전점검(TBM)</div><div class="checklist-subtitle">일시: {current_date}<br>점검자: {worker_name}<br>작업명: {work_name}<br>작업장소: {work_location}<br>작업유형: {work_type}</div></div>'
     st.markdown(checklist_info_html, unsafe_allow_html=True)
@@ -4676,7 +4759,8 @@ def show_checklist():
         )
         signature_buf = BytesIO()
         signature_image.save(signature_buf, format="PNG")
-        st.session_state.signature_png_bytes = signature_buf.getvalue()
+        signature_png_bytes = signature_buf.getvalue()
+        st.session_state.signature_png_bytes = signature_png_bytes
 
         st.session_state.checklist_data = {
             "저장시간": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -4691,9 +4775,62 @@ def show_checklist():
             "TBM완료여부": "완료"
         }
 
-        st.success("TBM 체크리스트가 저장되었습니다.")
+        task_id = work_data.get("task_id", "")
+        team_id = st.session_state.get("team_id", "")
 
-        st.session_state.page = "journal"
+        # 서명과 TBM 1차 정보(체크리스트 결과)를 작업일지 제출을 기다리지 않고 바로 반영한다.
+        # work_logs는 (task_id, worker_name) 기준으로 upsert되어, 이후 작업일지 제출 시
+        # 같은 행에 종료 미팅 내용만 추가되고 새 행이 생기지 않는다.
+        try:
+            upload_signature(task_id, team_id, worker_name, signature_png_bytes)
+
+            upsert_work_log({
+                "team_id": team_id,
+                "team_name": st.session_state.get("team_name", ""),
+                "task_id": task_id,
+                "worker_name": worker_name,
+                "work_name": work_name,
+                "work_location": work_location,
+                "work_time": work_time,
+                "work_type": work_type,
+                "material_name": chemical,
+                "risk_score": float(score) if score is not None else None,
+                "risk_level": level,
+                "tbm_status": "완료",
+                "daily_safety_check_result": remark,
+                "is_tbm_leader": work_data.get("TBM리더여부", False),
+                "main_hazard_1": work_data.get("main_hazard_1", ""),
+                "main_hazard_2": work_data.get("main_hazard_2", ""),
+                "main_hazard_3": work_data.get("main_hazard_3", ""),
+                "safety_measure_1": work_data.get("safety_measure_1", ""),
+                "safety_measure_2": work_data.get("safety_measure_2", ""),
+                "safety_measure_3": work_data.get("safety_measure_3", ""),
+                "leader_department": work_data.get("리더소속", ""),
+                "leader_position": work_data.get("리더직책", ""),
+                "leader_name": work_data.get("리더성명", ""),
+                "tbm_start_time": work_data.get("TBM시작시간", ""),
+                "submit_status": "TBM완료",
+            }, task_id, worker_name)
+        except Exception as e:
+            st.error("서명/TBM 정보 저장 중 오류가 발생했습니다.")
+            st.write(str(e))
+
+        # 작업모드 선택 화면으로 돌아갔을 때 방금 사용한 작업자명/작업이 그대로
+        # 선택돼 있도록, 로그인 화면 위젯의 session_state 값을 미리 채워 둔다.
+        # (텍스트 입력 위젯은 이 페이지를 벗어났다 오면 값이 비워지므로, 자동으로
+        # 유지되지 않는다 — 위젯 재생성 전에 값을 직접 지정해야 한다.)
+        st.session_state.login_mode_radio = "작업자"
+        st.session_state.login_worker_name = worker_name
+        st.session_state.login_selected_task = f"{work_name} / {work_data.get('예정시간', '-')}"
+        if work_data.get("TBM리더여부", False):
+            st.session_state.is_tbm_leader = True
+            st.session_state.leader_department = work_data.get("리더소속", "")
+            st.session_state.leader_position = work_data.get("리더직책", "")
+
+        st.success("TBM 체크리스트가 저장되었습니다.")
+        st.info("작업모드 선택 화면의 '작업로그 작성하기' 버튼으로 작업일지를 이어서 작성할 수 있습니다.")
+
+        st.session_state.page = "login"
         st.rerun()
 
     show_bottom_nav()
@@ -4718,16 +4855,10 @@ def show_journal():
     if st.session_state.get("show_journal_success_modal"):
         show_journal_success_popup()
 
-    render_topbar("journal", "Safety TBM", "journal-app-title", back_page="checklist", help_key="journal")
+    render_topbar("journal", "Safety TBM", "journal-app-title", back_page="login", help_key="journal")
 
     # 작업자 기기(브라우저)의 로컬 시각. "제출하기" 클릭 시 TBM 제출 시각으로 기록한다.
     client_dt = get_client_datetime()
-
-    # =========================
-    # 데이터 불러오기
-    # =========================
-    work_data = st.session_state.get("work_data", {})
-
 
     # =========================
     # 데이터 불러오기
@@ -4743,9 +4874,36 @@ def show_journal():
     chemical = work_data.get("취급물질", "미입력")
     work_time = work_data.get("작업시간") or (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M")
 
-    score = result.get("score", None)
-    level = result.get("level", "미산정")
-    checklist_remark = checklist_data.get("특이사항", "")
+    task_id = work_data.get("task_id", "")
+
+    # 체크리스트 완료("TBM 완료 및 저장") 시점에 이미 저장된 work_logs 행을 DB에서
+    # 직접 조회해, 화면 표시와 재제출 값의 기준으로 삼는다. st.session_state.checklist_data는
+    # 작업자 전체가 공유하는 세션 값이라, "작업로그 작성하기"로 이 화면에 들어오기 전
+    # 다른 작업자/작업으로 바꿨다면 최신 값이 아닐 수 있으므로 신뢰하지 않는다.
+    existing_log = None
+    if task_id and worker_name and worker_name != "미입력":
+        try:
+            existing_result = (
+                supabase.table("work_logs")
+                .select("*")
+                .eq("task_id", task_id)
+                .eq("worker_name", worker_name)
+                .limit(1)
+                .execute()
+            )
+            if existing_result.data:
+                existing_log = existing_result.data[0]
+        except Exception as e:
+            print("기존 work_logs 조회 오류:", e)
+
+    if existing_log:
+        score = existing_log.get("risk_score")
+        level = existing_log.get("risk_level") or "미산정"
+        checklist_remark = existing_log.get("daily_safety_check_result") or ""
+    else:
+        score = result.get("score", None)
+        level = result.get("level", "미산정")
+        checklist_remark = checklist_data.get("특이사항", "")
 
     today_text = (client_dt or datetime.now()).strftime("%Y년 %m월 %d일")
     score_text = f"{float(score):.0f}점" if score is not None else "미산정"
@@ -4818,17 +4976,21 @@ def show_journal():
         submit_dt = client_dt or datetime.now()
         submit_time_str = submit_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        if st.session_state.work_data.get("TBM리더여부", False):
+        # 체크리스트 단계에서 이미 저장된 값(existing_log)을 우선 신뢰하고,
+        # 없는 경우에만 세션 값으로 대체한다.
+        base_fields = existing_log or {}
+        checklist_is_tbm_leader = base_fields.get("is_tbm_leader", st.session_state.work_data.get("TBM리더여부", False))
+
+        if checklist_is_tbm_leader:
             st.session_state.work_data["TBM종료시간"] = submit_time_str
 
         # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
         # IS NULL 조건으로 갱신하므로, 이미 값이 기록되어 있으면(=다른 작업자가 먼저 제출) 덮어쓰지 않는다.
-        task_id_for_first_submit = st.session_state.work_data.get("task_id", "")
-        if task_id_for_first_submit:
+        if task_id:
             try:
                 supabase.table("work_tasks").update(
                     {"first_tbm_submitted_at": submit_time_str}
-                ).eq("id", task_id_for_first_submit).is_(
+                ).eq("id", task_id).is_(
                     "first_tbm_submitted_at", "null"
                 ).execute()
             except Exception as e:
@@ -4873,71 +5035,38 @@ def show_journal():
         )
 
         try:
-
-            supabase.table("work_logs").insert({
-
+            # 체크리스트 완료("TBM 완료 및 저장") 시점에 이미 만들어 둔 work_logs 행에
+            # 작업일지 정보(종료 미팅, 종료 시간, 최종 제출 상태)를 이어서 채운다.
+            # (task_id, worker_name) 기준 upsert이므로 행이 2건으로 늘지 않는다.
+            upsert_work_log({
                 "team_id": st.session_state.get("team_id", ""),
                 "team_name": st.session_state.get("team_name", ""),
-
                 "task_id": st.session_state.work_data.get("task_id", ""),
-
                 "worker_name": worker_name,
-
                 "work_name": work_name,
-
                 "work_location": work_location,
-
                 "work_time": work_time,
-
                 "work_type": st.session_state.work_data.get("작업유형", ""),
-
                 "material_name": chemical,
-
                 "risk_score": float(score) if score is not None else None,
-
                 "risk_level": level,
-
                 "tbm_status": "완료",
-
                 "daily_safety_check_result": checklist_remark,
-
                 "closing_meeting_result": journal_note,
-
-                "is_tbm_leader": st.session_state.work_data.get("TBM리더여부", False),
-
-                "daily_safety_check_result": checklist_remark,
-
-                "closing_meeting_result": journal_note,
-
-                "main_hazard_1": st.session_state.work_data.get("main_hazard_1", ""),
-                "main_hazard_2": st.session_state.work_data.get("main_hazard_2", ""),
-                "main_hazard_3": st.session_state.work_data.get("main_hazard_3", ""),
-
-                "safety_measure_1": st.session_state.work_data.get("safety_measure_1", ""),
-                "safety_measure_2": st.session_state.work_data.get("safety_measure_2", ""),
-                "safety_measure_3": st.session_state.work_data.get("safety_measure_3", ""),
-
-                "leader_department": st.session_state.work_data.get("리더소속", ""),
-
-                "leader_position": st.session_state.work_data.get("리더직책", ""),
-
-                "leader_name": st.session_state.work_data.get("리더성명", ""),
-
-                "tbm_start_time": st.session_state.work_data.get("TBM시작시간", ""),
-
+                "is_tbm_leader": checklist_is_tbm_leader,
+                "main_hazard_1": base_fields.get("main_hazard_1") or st.session_state.work_data.get("main_hazard_1", ""),
+                "main_hazard_2": base_fields.get("main_hazard_2") or st.session_state.work_data.get("main_hazard_2", ""),
+                "main_hazard_3": base_fields.get("main_hazard_3") or st.session_state.work_data.get("main_hazard_3", ""),
+                "safety_measure_1": base_fields.get("safety_measure_1") or st.session_state.work_data.get("safety_measure_1", ""),
+                "safety_measure_2": base_fields.get("safety_measure_2") or st.session_state.work_data.get("safety_measure_2", ""),
+                "safety_measure_3": base_fields.get("safety_measure_3") or st.session_state.work_data.get("safety_measure_3", ""),
+                "leader_department": base_fields.get("leader_department") or st.session_state.work_data.get("리더소속", ""),
+                "leader_position": base_fields.get("leader_position") or st.session_state.work_data.get("리더직책", ""),
+                "leader_name": base_fields.get("leader_name") or st.session_state.work_data.get("리더성명", ""),
+                "tbm_start_time": base_fields.get("tbm_start_time") or st.session_state.work_data.get("TBM시작시간", ""),
                 "tbm_end_time": st.session_state.work_data.get("TBM종료시간", ""),
-
-                "submit_status": "제출완료"
-
-            }).execute()
-
-            upload_signature(
-                st.session_state.work_data.get("task_id", ""),
-                st.session_state.get("team_id", ""),
-                worker_name,
-                st.session_state.get("signature_png_bytes"),
-            )
-            st.session_state.pop("signature_png_bytes", None)
+                "submit_status": "제출완료",
+            }, task_id, worker_name)
 
         except Exception as e:
 
