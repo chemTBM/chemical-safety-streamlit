@@ -289,15 +289,22 @@ div[data-baseweb="input"] {
     border-radius: 12px;
 }
 
-/* 기본 버튼 */
+/* 기본 버튼: "TBM 회의록 출력하기"(st.download_button 기본 스타일)와 톤을 맞춰
+   흰 배경 + 얇은 테두리로 통일한다. */
 div.stButton > button {
     border-radius: 12px;
     font-size: 16px;
     font-weight: 800;
-    background: #2170e4;
-    color: white;
-    border: none;
+    background: #ffffff;
+    color: #1b1b1d;
+    border: 1px solid #d7d9e0;
     min-height: 46px;
+}
+
+div.stButton > button:hover {
+    background: #f7f8fa;
+    border-color: #b9bcc6;
+    color: #1b1b1d;
 }
 
 /* 하단 푸터 */
@@ -602,73 +609,11 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
     margin-bottom: 8px;
 }
 
-.wheel-picker-label {
-    text-align: center;
-    font-size: 13px;
-    font-weight: 800;
-    color: #45474c;
-    margin-bottom: 6px;
-}
-
-.wheel-picker-wrap {
-    position: relative;
-    height: 132px;
-    overflow: hidden;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    background: #fff;
-}
-
-.wheel-picker-highlight {
-    position: absolute;
-    top: 44px;
-    left: 0;
-    right: 0;
-    height: 44px;
-    border-top: 2px solid #2170e4;
-    border-bottom: 2px solid #2170e4;
-    background: rgba(33, 112, 228, 0.08);
-    pointer-events: none;
-    z-index: 1;
-}
-
-.wheel-picker-scroll {
-    height: 132px;
-    overflow-y: scroll;
-    scroll-snap-type: y mandatory;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
-}
-
-.wheel-picker-scroll::-webkit-scrollbar {
-    display: none;
-}
-
-.wheel-picker-item {
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    scroll-snap-align: center;
-    font-size: 20px;
-    font-weight: 700;
-    color: #45474c;
-}
-
-.wheel-picker-pad {
-    height: 44px;
-}
-
-.wheel-picker-row {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-}
-
-.wheel-picker-col {
-    width: 90px;
+/* 작업 시작 시간(시/분) 숫자 입력 두 칸을 나란히 배치한다. 이 앱은
+   max-width: 480px짜리 모바일 폭 레이아웃이라, st.columns를 그대로 두면
+   Streamlit이 좁은 화면에서 컬럼을 자동으로 세로로 쌓아버리므로 막아준다. */
+div[class*="st-key-tc_time_input_row"] div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
 }
 
 .selected-chip {
@@ -1346,6 +1291,32 @@ div[class*="st-key-topbar_"] [data-testid="stMarkdownContainer"] > div {
         border-radius: 0 !important;
     }
 }
+
+/* 입력창/텍스트 옆에 작은 버튼이 나란히 오는 여러 화면(작업자 명단 등록의
+   "추가"/"X" 삭제, 저장된 템플릿의 "불러오기"/"삭제", TBM 이력의 다운로드
+   아이콘 등)에서, 좁은 화면에서 Streamlit이 컬럼을 자동으로 세로로 쌓아버리는
+   기본 동작을 막는다. 이런 행은 모두 key를 "inline_row_"로 시작하게 지어
+   이 셀렉터 하나로 한꺼번에 잡는다(TBM 이력 목록은 기존 tbm_history_list
+   컨테이너를 그대로 재사용). 버튼이 든 마지막 컬럼은 내용 크기만큼만 차지하게
+   고정하고, 앞쪽 컬럼(입력창/칩/텍스트)이 남는 공간에 맞춰 줄어들도록 한다. */
+div[class*="st-key-inline_row_"] div[data-testid="stHorizontalBlock"],
+div[class*="st-key-tbm_history_list"] div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+}
+
+/* 저장된 템플릿의 "불러오기"/"삭제"처럼 버튼 두 개가 동일한 비율로 나란히
+   와야 하는 행은, 마지막 컬럼을 고정폭으로 만들면 두 버튼 크기가 서로
+   달라져 버리므로 줄바꿈만 막고 컬럼 비율은 그대로 둔다. */
+div[class*="st-key-inline_pair_"] div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+}
+
+div[class*="st-key-inline_row_"] [data-testid="stColumn"]:last-child,
+div[class*="st-key-tbm_history_list"] [data-testid="stColumn"]:last-child {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 # ========= 화면 구현 CCS =====
@@ -1689,8 +1660,9 @@ def show_team_access():
 }
 
 .team-create-btn {
-    background: linear-gradient(180deg,#2170e4,#0058be);
-    color: white;
+    background: #ffffff;
+    color: #1b1b1d;
+    border: 1px solid #d7d9e0;
     border-radius: 999px;
     padding: 12px 20px;
     font-weight: 900;
@@ -1748,16 +1720,22 @@ div[data-baseweb="input"] input {
     font-size: 16px !important;
 }
 
-/* 버튼 */
+/* 버튼: 앱 전체 버튼 스타일(흰 배경 + 테두리)과 통일 */
 div.stButton > button {
     border-radius: 999px;
     font-size: 17px;
     font-weight: 900;
-    background: linear-gradient(180deg, #2170e4 0%, #0058be 100%);
-    color: white;
-    border: none;
+    background: #ffffff;
+    color: #1b1b1d;
+    border: 1px solid #d7d9e0;
     box-shadow: 0 6px 16px rgba(0,0,0,0.22);
     margin-top: 8px;
+}
+
+div.stButton > button:hover {
+    background: #f7f8fa;
+    border-color: #b9bcc6;
+    color: #1b1b1d;
 }
 
 /* 안내문구 */
@@ -2209,40 +2187,42 @@ def show_create_team():
 <div class="worker-list-title" style="margin-top:24px;">작업자 명단 등록</div>
 """, unsafe_allow_html=True)
 
-    col_worker, col_add = st.columns([4, 1])
+    with st.container(key="inline_row_create_team_add"):
+        col_worker, col_add = st.columns([4, 1])
 
-    with col_worker:
-        worker_name = st.text_input(
-            "작업자 이름 입력",
-            placeholder="작업자 이름 입력",
-            label_visibility="collapsed",
-            key="worker_name_input"
-        )
+        with col_worker:
+            worker_name = st.text_input(
+                "작업자 이름 입력",
+                placeholder="작업자 이름 입력",
+                label_visibility="collapsed",
+                key="worker_name_input"
+            )
 
-    with col_add:
-        if st.button("추가", key="add_worker_btn", use_container_width=True):
-            if not worker_name.strip():
-                st.warning("작업자 이름을 입력해 주세요.")
-            elif worker_name.strip() in st.session_state.temp_workers:
-                st.warning("이미 등록된 작업자입니다.")
-            else:
-                st.session_state.temp_workers.append(worker_name.strip())
-                st.rerun()
+        with col_add:
+            if st.button("추가", key="add_worker_btn", use_container_width=True):
+                if not worker_name.strip():
+                    st.warning("작업자 이름을 입력해 주세요.")
+                elif worker_name.strip() in st.session_state.temp_workers:
+                    st.warning("이미 등록된 작업자입니다.")
+                else:
+                    st.session_state.temp_workers.append(worker_name.strip())
+                    st.rerun()
 
     if st.session_state.temp_workers:
         for idx, worker in enumerate(st.session_state.temp_workers):
-            col_name, col_del = st.columns([5, 1])
+            with st.container(key=f"inline_row_create_team_worker_{idx}"):
+                col_name, col_del = st.columns([5, 1])
 
-            with col_name:
-                st.markdown(
-                    f'<div class="worker-chip">{worker}</div>',
-                    unsafe_allow_html=True
-                )
+                with col_name:
+                    st.markdown(
+                        f'<div class="worker-chip">{worker}</div>',
+                        unsafe_allow_html=True
+                    )
 
-            with col_del:
-                if st.button("X", key=f"delete_worker_{idx}"):
-                    st.session_state.temp_workers.remove(worker)
-                    st.rerun()
+                with col_del:
+                    if st.button("X", key=f"delete_worker_{idx}"):
+                        st.session_state.temp_workers.remove(worker)
+                        st.rerun()
     else:
         st.caption("아직 등록된 작업자가 없습니다.")
 
@@ -3622,8 +3602,8 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
     if leader_log is None and logs:
         leader_log = logs[0]
 
-    # TBM 일시 = 그날 작업자 중 TBM을 가장 먼저 "제출하기"한 시각
-    # (work_tasks.first_tbm_submitted_at, show_journal()에서 최초 1회만 기록됨).
+    # TBM 일시 = 그날 작업자 중 TBM을 가장 먼저 "완료 및 저장"한 시각
+    # (work_tasks.first_tbm_submitted_at, show_checklist()에서 최초 1회만 기록됨).
     # 이 값이 없는 과거 작업(마이그레이션 이전 데이터)은 TBM 리더의 제출 시각으로 대체한다.
     tbm_end = task.get("first_tbm_submitted_at") or (
         leader_log.get("tbm_end_time", "") if leader_log else ""
@@ -4678,6 +4658,9 @@ def show_checklist():
         _redirect_with_message("login", "먼저 작업자명과 오늘 작업을 선택해 주세요.")
         return
 
+    if st.session_state.get("show_checklist_success_modal"):
+        show_checklist_success_popup()
+
     render_topbar("checklist", "Checklist", "checklist-app-title", back_page="task_info", help_key="checklist")
     _flash_pending_message()
 
@@ -4874,6 +4857,21 @@ def show_checklist():
             st.error("서명/TBM 정보 저장 중 오류가 발생했습니다.")
             st.write(str(e))
 
+        # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
+        # 작업일지 제출을 기다리지 않고 체크리스트 제출("TBM 완료 및 저장") 시점에 바로 기록해야
+        # 그 직후 회의록(Word)을 생성해도 TBM 일시가 정상적으로 표시된다.
+        # IS NULL 조건으로 갱신하므로, 이미 값이 기록되어 있으면(=다른 작업자가 먼저 제출) 덮어쓰지 않는다.
+        checklist_submit_time_str = (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+        if task_id:
+            try:
+                supabase.table("work_tasks").update(
+                    {"first_tbm_submitted_at": checklist_submit_time_str}
+                ).eq("id", task_id).is_(
+                    "first_tbm_submitted_at", "null"
+                ).execute()
+            except Exception as e:
+                print("first_tbm_submitted_at 업데이트 오류:", e)
+
         # 작업모드 선택 화면으로 돌아갔을 때 방금 사용한 작업자명/작업이 그대로
         # 선택돼 있도록, 로그인 화면 위젯의 session_state 값을 미리 채워 둔다.
         # (텍스트 입력 위젯은 이 페이지를 벗어났다 오면 값이 비워지므로, 자동으로
@@ -4886,13 +4884,25 @@ def show_checklist():
             st.session_state.leader_department = work_data.get("리더소속", "")
             st.session_state.leader_position = work_data.get("리더직책", "")
 
-        st.success("TBM 체크리스트가 저장되었습니다.")
-        st.info("작업모드 선택 화면의 '작업로그 작성하기' 버튼으로 작업일지를 이어서 작성할 수 있습니다.")
-
-        st.session_state.page = "login"
+        st.session_state.show_checklist_success_modal = True
         st.rerun()
 
     show_bottom_nav()
+
+def _close_checklist_success_modal():
+    st.session_state.show_checklist_success_modal = False
+
+
+@st.dialog("TBM 완료", on_dismiss=_close_checklist_success_modal)
+def show_checklist_success_popup():
+    st.write("TBM이 완료되었습니다.")
+
+    if st.button("확인", use_container_width=True):
+        st.session_state.show_checklist_success_modal = False
+        st.session_state.page = "login"
+        st.query_params.clear()
+        st.rerun()
+
 
 def _close_journal_success_modal():
     st.session_state.show_journal_success_modal = False
@@ -5056,17 +5066,9 @@ def show_journal():
         if checklist_is_tbm_leader:
             st.session_state.work_data["TBM종료시간"] = submit_time_str
 
-        # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
-        # IS NULL 조건으로 갱신하므로, 이미 값이 기록되어 있으면(=다른 작업자가 먼저 제출) 덮어쓰지 않는다.
-        if task_id:
-            try:
-                supabase.table("work_tasks").update(
-                    {"first_tbm_submitted_at": submit_time_str}
-                ).eq("id", task_id).is_(
-                    "first_tbm_submitted_at", "null"
-                ).execute()
-            except Exception as e:
-                print("first_tbm_submitted_at 업데이트 오류:", e)
+        # first_tbm_submitted_at은 이제 체크리스트 제출("TBM 완료 및 저장") 시점에
+        # show_checklist()에서 기록한다 — 작업일지 제출과 독립적으로 동작해야 하므로
+        # 여기서는 별도로 갱신하지 않는다.
 
         log_data = {
             "팀ID": st.session_state.get("team_id", ""),
@@ -5152,79 +5154,6 @@ def show_journal():
 
     show_bottom_nav()
 
-def _wheel_picker_html(dom_id, min_val, max_val):
-    """
-    휠 피커(숫자 목록이 세로로 스크롤되며 스냅되는 방식)의 HTML만 만들어 반환한다.
-    값을 읽어오는 부분은 _wheel_picker_scroll_value()가 담당한다 — 시/분 두 휠을
-    한 줄에 나란히 배치하려면 HTML을 하나의 st.markdown 호출로 묶어야 하는데,
-    스크롤 값 읽기는 휠마다 별도의 streamlit_js_eval 호출이 필요해서 둘을 분리했다.
-    """
-    items_html = "".join(
-        f'<div class="wheel-picker-item">{v:02d}</div>' for v in range(min_val, max_val + 1)
-    )
-
-    return (
-        '<div class="wheel-picker-wrap">'
-        '<div class="wheel-picker-highlight"></div>'
-        f'<div class="wheel-picker-scroll" id="{dom_id}">'
-        '<div class="wheel-picker-pad"></div>'
-        f'{items_html}'
-        '<div class="wheel-picker-pad"></div>'
-        '</div>'
-        '</div>'
-    )
-
-
-def _wheel_picker_scroll_value(dom_id, min_val, max_val, current_value, js_key):
-    """
-    _wheel_picker_html()로 이미 그려진 휠 피커의 스크롤 위치를 읽어 현재 선택값을 반환한다.
-    Streamlit에는 이런 위젯이 내장되어 있지 않아서, CSS scroll-snap으로 스크롤/스냅 동작을
-    구현하고 streamlit_js_eval로 parent 문서(실제 앱 페이지)의 스크롤 위치를 읽어와 값으로 바꾼다.
-    스크롤 리스너는 parent 문서의 DOM에 직접 붙기 때문에, JS 표현식 문자열이 매번 바뀌면
-    streamlit_js_eval이 rerun마다 재평가·재전송을 반복해 rerun이 끝없이 이어지는 문제가 있었다.
-    그래서 초기 스크롤 위치(default_idx)를 세션에 한 번만 고정해 표현식 문자열을 항상 동일하게
-    유지하고, 최초 1회만 실제로 평가되도록 한다(이후에는 리스너가 붙어 있는 한 스크롤 이벤트로만
-    값이 갱신된다).
-    """
-    item_height = 44
-
-    init_key = f"_{js_key}_initial_idx"
-    if init_key not in st.session_state:
-        st.session_state[init_key] = max(0, min(max_val - min_val, current_value - min_val))
-    default_idx = st.session_state[init_key]
-    max_idx = max_val - min_val
-
-    js = f"""
-    (function() {{
-        var el = parent.document.getElementById('{dom_id}');
-        if (!el) return 'no-el';
-        if (!el.dataset.wheelInit) {{
-            el.dataset.wheelInit = '1';
-            el.scrollTop = {default_idx} * {item_height};
-            var timer = null;
-            el.addEventListener('scroll', function() {{
-                if (timer) clearTimeout(timer);
-                timer = setTimeout(function() {{
-                    var idx = Math.round(el.scrollTop / {item_height});
-                    var clamped = Math.max(0, Math.min({max_idx}, idx));
-                    el.scrollTo({{top: clamped * {item_height}, behavior: 'smooth'}});
-                    sendDataToPython({{value: clamped, dataType: 'json'}});
-                }}, 180);
-            }});
-        }}
-        return 'attached';
-    }})()
-    """
-
-    scrolled_idx = streamlit_js_eval(js_expressions=js, key=js_key)
-
-    if isinstance(scrolled_idx, (int, float)):
-        new_value = min_val + int(scrolled_idx)
-        if min_val <= new_value <= max_val:
-            return new_value
-
-    return current_value
-
 def show_task_create():
 
     if not st.session_state.get("team_id"):
@@ -5288,13 +5217,14 @@ def show_task_create():
             key="tc_template_select"
         )
 
-        tc_load_col, tc_delete_col = st.columns(2)
+        with st.container(key="inline_pair_tc_template_btns"):
+            tc_load_col, tc_delete_col = st.columns(2)
 
-        with tc_load_col:
-            tc_load_clicked = st.button("📥 불러오기", key="tc_load_template_btn", use_container_width=True)
+            with tc_load_col:
+                tc_load_clicked = st.button("📥 불러오기", key="tc_load_template_btn", use_container_width=True)
 
-        with tc_delete_col:
-            tc_delete_clicked = st.button("🗑️ 삭제", key="tc_delete_template_btn", use_container_width=True)
+            with tc_delete_col:
+                tc_delete_clicked = st.button("🗑️ 삭제", key="tc_delete_template_btn", use_container_width=True)
 
         if tc_load_clicked:
             _template = template_options[tc_selected_template_name]
@@ -5365,35 +5295,81 @@ def show_task_create():
 
     _now_local = datetime.now()
 
-    _hour_default = st.session_state.get("tc_start_hour_val", _now_local.hour)
-    _minute_default = st.session_state.get("tc_start_minute_val", _now_local.minute)
+    # number_input에 min_value/max_value를 걸면, 범위를 벗어난 값을 키보드로 직접 타이핑해
+    # Enter를 눌렀을 때 위젯이 그 값을 서버에 아예 반영하지 않고 조용히 무시해버려서(직전의
+    # 유효했던 값을 그대로 유지) 화면에는 사용자가 입력한 범위 밖 숫자가 그대로 남아있는데
+    # 정작 서버는 다른 값을 들고 있는 상태가 되어버린다. 그래서 위젯 자체에는 범위 제한을
+    # 걸지 않고, 위젯을 만들기 "전"에 직전 rerun에서 커밋된 session_state 값을 미리
+    # 0~23 / 0~59로 보정해 둔다(위젯이 이미 만들어진 뒤에는 같은 key의 session_state를
+    # 다시 대입할 수 없어 이 순서가 중요하다).
+    _time_out_of_range = False
 
-    # 시/분 휠 피커를 st.columns가 아니라 flex CSS로 직접 나란히 배치한다.
-    # 이 앱은 max-width: 480px짜리 모바일 폭 레이아웃이라, st.columns를 쓰면
-    # Streamlit이 컬럼을 좁다고 판단해 자동으로 세로로 쌓아버린다.
-    st.markdown(
-        '<div class="wheel-picker-row">'
-        '<div class="wheel-picker-col">'
-        '<div class="wheel-picker-label">시</div>'
-        f'{_wheel_picker_html("tc-hour-wheel", 0, 23)}'
-        '</div>'
-        '<div class="wheel-picker-col">'
-        '<div class="wheel-picker-label">분</div>'
-        f'{_wheel_picker_html("tc-minute-wheel", 0, 59)}'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    if "tc_start_hour_input" in st.session_state:
+        _raw_hour = st.session_state["tc_start_hour_input"]
+        if not (0 <= _raw_hour <= 23):
+            st.session_state["tc_start_hour_input"] = max(0, min(23, _raw_hour))
+            _time_out_of_range = True
 
-    tc_start_hour = _wheel_picker_scroll_value(
-        "tc-hour-wheel", 0, 23, _hour_default, "tc_start_hour_wheel"
-    )
-    st.session_state["tc_start_hour_val"] = tc_start_hour
+    if "tc_start_minute_input" in st.session_state:
+        _raw_minute = st.session_state["tc_start_minute_input"]
+        if not (0 <= _raw_minute <= 59):
+            st.session_state["tc_start_minute_input"] = max(0, min(59, _raw_minute))
+            _time_out_of_range = True
 
-    tc_start_minute = _wheel_picker_scroll_value(
-        "tc-minute-wheel", 0, 59, _minute_default, "tc_start_minute_wheel"
+    if _time_out_of_range:
+        st.warning("작업 시작 시간은 시 0~23, 분 0~59 범위로 입력해 주세요. 값을 범위 안으로 보정했습니다.")
+
+    with st.container(key="tc_time_input_row"):
+        tc_hour_col, tc_minute_col = st.columns(2)
+
+        with tc_hour_col:
+            tc_start_hour = st.number_input(
+                "시",
+                step=1,
+                value=_now_local.hour,
+                key="tc_start_hour_input",
+            )
+
+        with tc_minute_col:
+            tc_start_minute = st.number_input(
+                "분",
+                step=1,
+                value=_now_local.minute,
+                key="tc_start_minute_input",
+            )
+
+    # 모바일에서 이 입력창을 탭했을 때 문자 키패드가 아니라 숫자 키패드가 바로 뜨도록,
+    # number_input이 만든 실제 <input>에 inputmode="numeric"을 부여한다. Streamlit에는
+    # 이 속성을 직접 지정하는 옵션이 없어, 휠 피커 시절과 같은 방식(streamlit_js_eval로
+    # parent 문서를 조작)을 재사용한다. 이 위젯은 값이 바뀔 때마다 React가 리렌더링되며
+    # inputmode 속성을 매번 지워버리므로, 한 번 스크립트가 실행된 뒤에도 계속 유지되도록
+    # MutationObserver로 속성이 지워지는 즉시 다시 채워 넣는다(스크롤 리스너와 동일하게
+    # 최초 1회만 리스너를 붙이고, 이후에는 리스너 자체가 계속 동작한다). JS 표현식 문자열은
+    # 매 rerun 동일하게 유지해 재평가·재전송이 반복되지 않도록 한다.
+    streamlit_js_eval(
+        js_expressions="""
+        (function() {
+            function initFor(k) {
+                var el = parent.document.querySelector('.st-key-' + k + ' input');
+                if (!el) {
+                    setTimeout(function() { initFor(k); }, 200);
+                    return;
+                }
+                if (el.dataset.numericKeypadInit) return;
+                el.dataset.numericKeypadInit = '1';
+                function apply() {
+                    if (el.getAttribute('inputmode') !== 'numeric') el.setAttribute('inputmode', 'numeric');
+                    if (el.getAttribute('pattern') !== '[0-9]*') el.setAttribute('pattern', '[0-9]*');
+                }
+                apply();
+                new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['inputmode', 'pattern'] });
+            }
+            ['tc_start_hour_input', 'tc_start_minute_input'].forEach(initFor);
+            return 'ok';
+        })()
+        """,
+        key="tc_time_numeric_keypad",
     )
-    st.session_state["tc_start_minute_val"] = tc_start_minute
 
     tc_start_time = dt_time(tc_start_hour, tc_start_minute)
 
@@ -5796,50 +5772,6 @@ def show_manager_dashboard():
     color: #ea580c;
 }
 
-.risk-badge-red {
-    background: #fee2e2;
-    color: #dc2626;
-}
-
-.risk-badge-yellow {
-    background: #fef3c7;
-    color: #d97706;
-}
-
-.risk-badge-green {
-    background: #dbeafe;
-    color: #2563eb;
-}
-
-.incomplete-box {
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 16px;
-}
-
-.incomplete-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: white;
-    border-radius: 12px;
-    padding: 12px;
-    margin-top: 8px;
-    border: 1px solid #fed7aa;
-}
-
-.incomplete-name {
-    font-weight: 900;
-    color: #091426;
-}
-
-.incomplete-work {
-    font-size: 13px;
-    color: #45474c;
-}
-
 .tbm-history-row {
     padding: 0;
     line-height: 1.3;
@@ -5848,6 +5780,7 @@ def show_manager_dashboard():
 .tbm-history-date {
     font-size: 13px;
     color: #45474c;
+    white-space: nowrap;
 }
 
 .tbm-history-name {
@@ -5901,66 +5834,15 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
         st.caption("아직 등록된 작업이 없습니다.")
     else:
         for task in today_tasks:
-
-            task_workers = ", ".join(task.get("assigned_workers") or [])
-
-            task_card_html = f"""
-    <div class="log-card">
-    <div class="log-top-row">
-    <div class="log-work-name">{task.get("work_name", "-")}</div>
-    <span class="status-badge status-progress">
-    {task.get("scheduled_time", "-")}
-    </span>
-    </div>
-
-    <div class="log-meta">
-    작업내용: {task.get("work_content", "-")}<br>
-    작업장소: {task.get("work_location", "-")}<br>
-    TBM 장소: {task.get("tbm_place", "-")}<br>
-    작업자: {task_workers}
-    </div>
-    </div>
-    """
-
-            st.markdown(
-                task_card_html,
-                unsafe_allow_html=True
-            )
-            try:
-                log_result = (
-                    supabase.table("work_logs")
-                    .select("*")
-                    .eq("task_id", task.get("id", ""))
-                    .execute()
-                )
-
-                task_logs = log_result.data if log_result.data else []
-
-                st.caption(f"제출된 TBM 기록: {len(task_logs)}건")
-
-                signatures_by_worker = fetch_signatures_for_task(task.get("id", ""))
-                docx_file = generate_tbm_docx(task, task_logs, signatures_by_worker)
-
-                downloaded = st.download_button(
-                    label="📄 TBM 회의록 출력하기",
-                    data=docx_file,
-                    file_name=f"TBM회의록_{task.get('work_name', '작업')}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key=f"download_tbm_docx_{task.get('id')}",
-                    use_container_width=True
-                )
-
-                if downloaded and not task.get("tbm_docx_generated_at"):
-                    try:
-                        supabase.table("work_tasks").update({
-                            "tbm_docx_generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }).eq("id", task.get("id")).execute()
-                    except Exception as e:
-                        print("tbm_docx_generated_at 업데이트 오류:", e)
-
-            except Exception as e:
-                st.error("TBM 회의록 생성 실패")
-                st.write(str(e))
+            if st.button(
+                f"📋 {task.get('work_name', '-')}",
+                key=f"task_detail_btn_{task.get('id')}",
+                use_container_width=True
+            ):
+                st.session_state.selected_task_id = task.get("id")
+                st.session_state.page = "task_detail"
+                st.query_params.clear()
+                st.rerun()
 
     st.markdown('<div class="manager-section-title">내일 예정된 작업</div>', unsafe_allow_html=True)
 
@@ -6196,78 +6078,240 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
 
                 st.markdown('<hr class="tbm-history-divider">', unsafe_allow_html=True)
 
-    st.markdown('<div class="manager-section-title">실시간 작업로그</div>', unsafe_allow_html=True)
+    show_bottom_nav()
 
-    csv_df = log_df.copy()
-    csv_data = csv_df.to_csv(index=False, encoding="utf-8-sig")
+def show_task_detail():
 
-    st.download_button(
-        label="📥 CSV 다운로드",
-        data=csv_data,
-        file_name="safety_tbm_work_logs.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+    if not st.session_state.get("team_id"):
+        st.warning("팀 접속 정보가 없습니다. 작업팀 접속 화면에서 다시 접속해 주세요.")
 
-    for _, row in log_df.iterrows():
-        risk_text = str(row.get("위험등급", ""))
-        status = str(row.get("TBM완료여부", row.get("제출상태", "진행중")))
+        if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
+            st.session_state.page = "team_access"
+            st.query_params.clear()
+            st.rerun()
 
-        if "위험경고" in risk_text or "고위험" in risk_text or "🔴" in risk_text:
-            risk_class = "risk-badge-red"
-            risk_label = "고위험"
-        elif "작업주의" in risk_text or "중위험" in risk_text or "🟡" in risk_text:
-            risk_class = "risk-badge-yellow"
-            risk_label = "중위험"
-        else:
-            risk_class = "risk-badge-green"
-            risk_label = "저위험"
+        return
 
-        status_class = "status-done" if "완료" in status else "status-progress"
-        status_label = "완료 ✓" if "완료" in status else "진행중"
+    if st.session_state.get("mode") != "안전관리자":
+        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
 
-        st.markdown(f"""
+        if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
+            st.session_state.page = "login"
+            st.rerun()
+
+        return
+
+    task_id = st.session_state.get("selected_task_id")
+
+    if not task_id:
+        _redirect_with_message("manager", "먼저 대시보드에서 작업을 선택해 주세요.")
+        return
+
+    try:
+        task_result = (
+            supabase.table("work_tasks")
+            .select("*")
+            .eq("id", task_id)
+            .limit(1)
+            .execute()
+        )
+        task = task_result.data[0] if task_result.data else None
+    except Exception as e:
+        st.error("작업 정보를 불러오지 못했습니다.")
+        st.write(str(e))
+        task = None
+
+    if not task:
+        _redirect_with_message("manager", "해당 작업을 찾을 수 없습니다.")
+        return
+
+    st.markdown("""
+<style>
+.task-detail-title {
+    font-size: 22px;
+    font-weight: 900;
+    color: #091426;
+}
+
+.manager-section-title {
+    font-size: 22px;
+    font-weight: 900;
+    color: #091426;
+    margin: 24px 0 12px 0;
+}
+
+.log-card {
+    background: white;
+    border: 1px solid #d8dee9;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 10px;
+    box-shadow: 0 3px 10px rgba(15,23,42,0.06);
+}
+
+.log-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.log-work-name {
+    font-size: 16px;
+    font-weight: 900;
+    color: #091426;
+}
+
+.log-meta {
+    font-size: 13px;
+    color: #45474c;
+    line-height: 1.5;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 900;
+    margin-right: 6px;
+}
+
+.status-done {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.status-progress {
+    background: #ffedd5;
+    color: #ea580c;
+}
+</style>
+""", unsafe_allow_html=True)
+
+    render_topbar("task_detail", task.get("work_name", "작업 상세"), "task-detail-title", back_page="manager", help_key="manager")
+    _flash_pending_message()
+
+    task_info_html = f"""
+<div class="log-card">
+    <div class="log-meta">
+    작업내용: {task.get("work_content", "-")}<br>
+    작업장소: {task.get("work_location", "-")}<br>
+    TBM 장소: {task.get("tbm_place", "-")}<br>
+    예정시간: {task.get("scheduled_time", "-")}
+    </div>
+</div>
+"""
+    st.markdown(task_info_html, unsafe_allow_html=True)
+
+    try:
+        log_result = (
+            supabase.table("work_logs")
+            .select("*")
+            .eq("task_id", task_id)
+            .execute()
+        )
+        task_logs = log_result.data if log_result.data else []
+    except Exception as e:
+        st.error("작업로그를 불러오지 못했습니다.")
+        st.write(str(e))
+        task_logs = []
+
+    # (task_id, worker_name) 기준으로 하나의 work_logs 행에 체크리스트→작업일지가
+    # 이어서 채워지는 구조이므로, worker_name별 최신 행 하나만 있으면 된다.
+    logs_by_worker = {log.get("worker_name"): log for log in task_logs}
+
+    assigned_workers = task.get("assigned_workers") or []
+
+    st.markdown('<div class="manager-section-title">작업자별 제출 현황</div>', unsafe_allow_html=True)
+
+    if not assigned_workers:
+        st.caption("배정된 작업자가 없습니다.")
+    else:
+        for worker_name in assigned_workers:
+            worker_log = logs_by_worker.get(worker_name)
+            submit_status = worker_log.get("submit_status") if worker_log else None
+
+            # work_logs.submit_status는 체크리스트 제출 시 "TBM완료", 작업일지 제출 시
+            # "제출완료"로 갱신된다. 행이 아예 없으면 TBM조차 아직 안 낸 것이다.
+            tbm_done = submit_status in ("TBM완료", "제출완료")
+            journal_done = submit_status == "제출완료"
+
+            tbm_badge = (
+                '<span class="status-badge status-done">TBM 완료</span>'
+                if tbm_done else
+                '<span class="status-badge status-progress">TBM 미완료</span>'
+            )
+            journal_badge = (
+                '<span class="status-badge status-done">작업일지 완료</span>'
+                if journal_done else
+                '<span class="status-badge status-progress">작업일지 미완료</span>'
+            )
+
+            worker_card_html = f"""
 <div class="log-card">
     <div class="log-top-row">
-        <div>
-            <span class="status-badge {risk_class}">{risk_label}</span>
-            <span class="log-work-name"> {row.get("작업명", "-")}</span>
-        </div>
-        <span class="status-badge {status_class}">{status_label}</span>
+        <div class="log-work-name">{worker_name}</div>
     </div>
-    <div class="log-meta">
-        작업자: {row.get("작업자", "-")}<br>
-        작업시간: {row.get("작업시간", "-")}<br>
-        위험도: {row.get("위험도점수", "-")} / {row.get("위험등급", "-")}<br>
-        TBM 특이사항: {row.get("TBM특이사항", "-")}<br>
-        작업 특이사항: {row.get("작업특이사항", "-")}
-    </div>
+    <div>{tbm_badge}{journal_badge}</div>
 </div>
-""", unsafe_allow_html=True)
+"""
+            st.markdown(worker_card_html, unsafe_allow_html=True)
 
-    st.markdown('<div class="manager-section-title">작업 미완료 작업자</div>', unsafe_allow_html=True)
+    st.markdown('<div class="manager-section-title">TBM 회의록 / 작업로그</div>', unsafe_allow_html=True)
 
-    incomplete_df = log_df[log_df["제출상태"].astype(str) != "제출완료"] if "제출상태" in log_df.columns else pd.DataFrame()
+    try:
+        signatures_by_worker = fetch_signatures_for_task(task_id)
+        docx_file = generate_tbm_docx(task, task_logs, signatures_by_worker)
 
-    if incomplete_df.empty:
-        st.success("현재 작업 미완료 작업자가 없습니다.")
-    else:
-        st.markdown("""
-<div class="incomplete-box">
-    ⏱️ 아래 팀원은 현재 작업을 진행 중이며, 작업로그 제출이 완료되지 않았습니다.
-</div>
-""", unsafe_allow_html=True)
+        downloaded = st.download_button(
+            label="📄 TBM 회의록 출력하기",
+            data=docx_file,
+            file_name=f"TBM회의록_{task.get('work_name', '작업')}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key=f"download_tbm_docx_detail_{task_id}",
+            use_container_width=True
+        )
 
-        for _, row in incomplete_df.iterrows():
-            st.markdown(f"""
-<div class="incomplete-item">
-    <div>
-        <div class="incomplete-name">{row.get("작업자", "-")}</div>
-        <div class="incomplete-work">{row.get("작업명", "-")}</div>
-    </div>
-    <div class="status-badge status-progress">진행중</div>
-</div>
-""", unsafe_allow_html=True)
+        if downloaded and not task.get("tbm_docx_generated_at"):
+            try:
+                supabase.table("work_tasks").update({
+                    "tbm_docx_generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }).eq("id", task_id).execute()
+            except Exception as e:
+                print("tbm_docx_generated_at 업데이트 오류:", e)
+
+    except Exception as e:
+        st.error("TBM 회의록 생성 실패")
+        st.write(str(e))
+
+    csv_rows = []
+    for log in task_logs:
+        risk_score = log.get("risk_score")
+        risk_score_text = f"{risk_score:.0f}점" if isinstance(risk_score, (int, float)) else "-"
+
+        csv_rows.append({
+            "작업명": log.get("work_name", "-"),
+            "작업자": log.get("worker_name", "-"),
+            "작업시간": log.get("work_time", "-"),
+            "위험도점수": risk_score_text,
+            "위험등급": log.get("risk_level", "-"),
+            "TBM완료여부": log.get("tbm_status", "-"),
+            "TBM특이사항": log.get("daily_safety_check_result", "-"),
+            "작업특이사항": log.get("closing_meeting_result", "-"),
+            "제출상태": log.get("submit_status", "-")
+        })
+
+    csv_data = pd.DataFrame(csv_rows).to_csv(index=False, encoding="utf-8-sig")
+
+    st.download_button(
+        label="📥 이 작업의 작업로그 CSV 다운로드",
+        data=csv_data,
+        file_name=f"작업로그_{task.get('work_name', '작업')}.csv",
+        mime="text/csv",
+        key=f"download_task_csv_{task_id}",
+        use_container_width=True
+    )
 
     show_bottom_nav()
 
@@ -6789,5 +6833,8 @@ elif st.session_state.page == "manager":
 
 elif st.session_state.page == "task_create":
     show_task_create()
+
+elif st.session_state.page == "task_detail":
+    show_task_detail()
 
 show_active_help_popup()
