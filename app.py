@@ -4766,12 +4766,10 @@ def show_checklist():
 
     if st.button("🧹 지우기 (다시 서명)"):
         st.session_state.signature_reset_count = signature_reset_count + 1
+        st.session_state.pop("signature_confirmed_png", None)
+        st.session_state.pop("signature_confirmed_reset_count", None)
         st.rerun()
 
-    # streamlit-drawable-canvas는 컴포넌트가 아직 브라우저에서 값을 돌려주기 전(첫 렌더링,
-    # 리셋 직후 리렌더링 등)에는 image_data가 None이거나 canvas_result 자체가 예상과 다른
-    # 형태일 수 있다. getattr + try/except로 방어해 어떤 경우에도 RuntimeError 없이
-    # "서명 없음" 상태로만 처리되도록 한다.
     def _is_signature_drawn(result):
         try:
             image_data = getattr(result, "image_data", None)
@@ -4781,7 +4779,33 @@ def show_checklist():
         except Exception:
             return False
 
-    signature_drawn = _is_signature_drawn(canvas_result)
+    # streamlit-drawable-canvas 컴포넌트는 다른 위젯(체크박스, 텍스트 입력 등)이 먼저
+    # 리런을 유발한 경우, 방금 그린 서명 결과가 세션에 아직 반영되기 전이라 image_data가
+    # None이거나 canvas_result 자체가 CanvasResult 클래스로 반환될 수 있다(브라우저→세션
+    # 반영 타이밍 문제). 이 경우 실제로는 서명을 그렸는데도 "없음"으로 잘못 판단하게 된다.
+    # 이를 막기 위해, 이번 리런에서 서명이 정상적으로 감지되면 즉시 PNG로 인코딩해
+    # session_state에 "확정" 저장해두고, 같은 캔버스(같은 reset_count)인 동안에는 이후
+    # 리런에서 캔버스 값이 일시적으로 비어 보이더라도 이 확정 데이터를 신뢰한다.
+    # "지우기(다시 서명)"를 누를 때만 확정 상태를 초기화한다.
+    live_signature_drawn = _is_signature_drawn(canvas_result)
+
+    if live_signature_drawn:
+        try:
+            _live_buf = BytesIO()
+            Image.fromarray(
+                np.asarray(canvas_result.image_data).astype("uint8"), mode="RGBA"
+            ).save(_live_buf, format="PNG")
+            st.session_state.signature_confirmed_png = _live_buf.getvalue()
+            st.session_state.signature_confirmed_reset_count = signature_reset_count
+        except Exception:
+            pass
+
+    signature_confirmed_png = (
+        st.session_state.get("signature_confirmed_png")
+        if st.session_state.get("signature_confirmed_reset_count") == signature_reset_count
+        else None
+    )
+    signature_drawn = live_signature_drawn or signature_confirmed_png is not None
 
     if not signature_drawn:
         st.warning("서명을 입력해야 TBM을 완료할 수 있습니다.")
@@ -4806,16 +4830,19 @@ def show_checklist():
             st.error("서명을 입력해야 TBM을 완료할 수 있습니다.")
             return
 
-        try:
-            signature_image = Image.fromarray(
-                np.asarray(canvas_result.image_data).astype("uint8"), mode="RGBA"
-            )
-        except Exception:
-            st.error("서명 이미지를 처리하지 못했습니다. 서명을 다시 입력한 후 제출해 주세요.")
-            return
-        signature_buf = BytesIO()
-        signature_image.save(signature_buf, format="PNG")
-        signature_png_bytes = signature_buf.getvalue()
+        # 확정 저장된 서명 PNG가 있으면 그것을 우선 사용한다(제출 버튼 클릭으로 인한
+        # 리런에서 canvas_result 값이 일시적으로 비어 보이는 경우를 대비).
+        signature_png_bytes = signature_confirmed_png
+        if signature_png_bytes is None:
+            try:
+                signature_buf = BytesIO()
+                Image.fromarray(
+                    np.asarray(canvas_result.image_data).astype("uint8"), mode="RGBA"
+                ).save(signature_buf, format="PNG")
+                signature_png_bytes = signature_buf.getvalue()
+            except Exception:
+                st.error("서명 이미지를 처리하지 못했습니다. 서명을 다시 입력한 후 제출해 주세요.")
+                return
         st.session_state.signature_png_bytes = signature_png_bytes
 
         st.session_state.checklist_data = {
