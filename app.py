@@ -4751,6 +4751,10 @@ def show_checklist():
     st.caption("터치 또는 마우스로 아래 칸에 직접 서명해 주세요.")
 
     signature_reset_count = st.session_state.get("signature_reset_count", 0)
+    # 확정 서명 캐시는 "이번 작업 + 이번 작업자 + 이번 캔버스(reset_count)"에만 유효해야
+    # 한다. task_id/작업자명이 다르면(다른 작업, 다른 사람, 혹은 한 세션에서 여러 TBM을
+    # 연달아 제출) 이전에 확정된 서명이 새 TBM에 잘못 재사용되지 않도록 스코프 키에 포함한다.
+    signature_scope_key = (work_data.get("task_id", ""), worker_name, signature_reset_count)
 
     canvas_result = st_canvas(
         fill_color="rgba(0, 0, 0, 0)",
@@ -4767,7 +4771,7 @@ def show_checklist():
     if st.button("🧹 지우기 (다시 서명)"):
         st.session_state.signature_reset_count = signature_reset_count + 1
         st.session_state.pop("signature_confirmed_png", None)
-        st.session_state.pop("signature_confirmed_reset_count", None)
+        st.session_state.pop("signature_confirmed_scope_key", None)
         st.rerun()
 
     def _is_signature_drawn(result):
@@ -4796,13 +4800,13 @@ def show_checklist():
                 np.asarray(canvas_result.image_data).astype("uint8"), mode="RGBA"
             ).save(_live_buf, format="PNG")
             st.session_state.signature_confirmed_png = _live_buf.getvalue()
-            st.session_state.signature_confirmed_reset_count = signature_reset_count
+            st.session_state.signature_confirmed_scope_key = signature_scope_key
         except Exception:
             pass
 
     signature_confirmed_png = (
         st.session_state.get("signature_confirmed_png")
-        if st.session_state.get("signature_confirmed_reset_count") == signature_reset_count
+        if st.session_state.get("signature_confirmed_scope_key") == signature_scope_key
         else None
     )
     signature_drawn = live_signature_drawn or signature_confirmed_png is not None
@@ -4897,6 +4901,11 @@ def show_checklist():
         except Exception as e:
             st.error("서명/TBM 정보 저장 중 오류가 발생했습니다.")
             st.write(str(e))
+
+        # 제출을 시도한 서명은 이 작업/작업자에 한정된 것이므로, 다음 TBM(다른 작업이나
+        # 같은 세션에서 이어지는 다른 사람의 제출)에 잘못 재사용되지 않도록 확정 캐시를 지운다.
+        st.session_state.pop("signature_confirmed_png", None)
+        st.session_state.pop("signature_confirmed_scope_key", None)
 
         # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
         # 작업일지 제출을 기다리지 않고 체크리스트 제출("TBM 완료 및 저장") 시점에 바로 기록해야
