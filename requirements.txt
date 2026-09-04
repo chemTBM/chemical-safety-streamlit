@@ -11,4 +11,4 @@ docxtpl
 streamlit_js_eval
 streamlit-searchbox
 Pillow
-streamlit-drawable-canvas
+streamlit-drawable-canvas==0.9.3
