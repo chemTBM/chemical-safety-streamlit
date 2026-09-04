@@ -295,7 +295,7 @@ div.stButton > button {
     border-radius: 12px;
     font-size: 16px;
     font-weight: 800;
-    background: #ffffff;
+    background: #f7f7f7;
     color: #1b1b1d;
     border: 1px solid #d7d9e0;
     min-height: 46px;
@@ -1660,7 +1660,7 @@ def show_team_access():
 }
 
 .team-create-btn {
-    background: #ffffff;
+    background: #f7f7f7;
     color: #1b1b1d;
     border: 1px solid #d7d9e0;
     border-radius: 999px;
@@ -1725,7 +1725,7 @@ div.stButton > button {
     border-radius: 999px;
     font-size: 17px;
     font-weight: 900;
-    background: #ffffff;
+    background: #f7f7f7;
     color: #1b1b1d;
     border: 1px solid #d7d9e0;
     box-shadow: 0 6px 16px rgba(0,0,0,0.22);
@@ -4768,10 +4768,20 @@ def show_checklist():
         st.session_state.signature_reset_count = signature_reset_count + 1
         st.rerun()
 
-    signature_drawn = (
-        canvas_result.image_data is not None
-        and bool(np.any(canvas_result.image_data[:, :, 3] > 0))
-    )
+    # streamlit-drawable-canvas는 컴포넌트가 아직 브라우저에서 값을 돌려주기 전(첫 렌더링,
+    # 리셋 직후 리렌더링 등)에는 image_data가 None이거나 canvas_result 자체가 예상과 다른
+    # 형태일 수 있다. getattr + try/except로 방어해 어떤 경우에도 RuntimeError 없이
+    # "서명 없음" 상태로만 처리되도록 한다.
+    def _is_signature_drawn(result):
+        try:
+            image_data = getattr(result, "image_data", None)
+            if image_data is None:
+                return False
+            return bool(np.any(np.asarray(image_data)[:, :, 3] > 0))
+        except Exception:
+            return False
+
+    signature_drawn = _is_signature_drawn(canvas_result)
 
     if not signature_drawn:
         st.warning("서명을 입력해야 TBM을 완료할 수 있습니다.")
@@ -4796,9 +4806,13 @@ def show_checklist():
             st.error("서명을 입력해야 TBM을 완료할 수 있습니다.")
             return
 
-        signature_image = Image.fromarray(
-            canvas_result.image_data.astype("uint8"), mode="RGBA"
-        )
+        try:
+            signature_image = Image.fromarray(
+                np.asarray(canvas_result.image_data).astype("uint8"), mode="RGBA"
+            )
+        except Exception:
+            st.error("서명 이미지를 처리하지 못했습니다. 서명을 다시 입력한 후 제출해 주세요.")
+            return
         signature_buf = BytesIO()
         signature_image.save(signature_buf, format="PNG")
         signature_png_bytes = signature_buf.getvalue()
