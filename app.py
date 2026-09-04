@@ -1801,7 +1801,7 @@ div.stButton > button:hover {
     # 안내문구
     st.markdown("""
 <div class="team-helper">
-🛡️ 안전관리자가 생성한 팀정보로 접속합니다.
+🛡️ 작업관리자가 생성한 팀정보로 접속합니다.
 </div>
 """, unsafe_allow_html=True)
 
@@ -1858,7 +1858,7 @@ def _populate_worker_session_from_task(worker_name, selected_task, is_tbm_leader
     st.session_state.work_data["리더직책"] = leader_position.strip()
     st.session_state.work_data["리더성명"] = worker_name if is_tbm_leader else ""
 
-    # 안전관리자가 "오늘 작업 입력" 화면에서 미리 분석해 둔 위험도 결과를
+    # 작업관리자가 "오늘 작업 입력" 화면에서 미리 분석해 둔 위험도 결과를
     # 그대로 가져와 보여준다 (작업자가 다시 분석하지 않음).
     st.session_state.result = {
         "score": selected_task.get("risk_score"),
@@ -1916,7 +1916,7 @@ def show_login():
     # =========================
     mode = st.radio(
         "접속 모드",
-        ["작업자", "안전관리자"],
+        ["작업자", "작업관리자"],
         horizontal=True,
         label_visibility="collapsed",
         key="login_mode_radio"
@@ -1926,9 +1926,9 @@ def show_login():
     # 모드 카드 UI
     # =========================
     if mode == "작업자":
-        mode_card_html = '<div class="mode-card-wrap"><div class="mode-card mode-card-active"><div class="mode-icon">👷</div><div class="mode-label">작업자 모드</div></div><div class="mode-card"><div class="mode-icon">🛡️</div><div class="mode-label">안전관리자 모드</div></div></div>'
+        mode_card_html = '<div class="mode-card-wrap"><div class="mode-card mode-card-active"><div class="mode-icon">👷</div><div class="mode-label">작업자 모드</div></div><div class="mode-card"><div class="mode-icon">🛡️</div><div class="mode-label">작업관리자 모드</div></div></div>'
     else:
-        mode_card_html = '<div class="mode-card-wrap"><div class="mode-card"><div class="mode-icon">👷</div><div class="mode-label">작업자 모드</div></div><div class="mode-card mode-card-active"><div class="mode-icon">🛡️</div><div class="mode-label">안전관리자 모드</div></div></div>'
+        mode_card_html = '<div class="mode-card-wrap"><div class="mode-card"><div class="mode-icon">👷</div><div class="mode-label">작업자 모드</div></div><div class="mode-card mode-card-active"><div class="mode-icon">🛡️</div><div class="mode-label">작업관리자 모드</div></div></div>'
 
     st.markdown(mode_card_html, unsafe_allow_html=True)
 
@@ -1961,7 +1961,7 @@ def show_login():
             selected_task = task_options[selected_task_label]
         
         else:
-            st.warning("안전관리자가 등록한 오늘 작업이 없습니다.")
+            st.warning("작업관리자가 등록한 오늘 작업이 없습니다.")
         
         
 
@@ -1993,14 +1993,14 @@ def show_login():
 
     else:
         manager_password_input = st.text_input(
-            "안전관리자 모드 진입 비밀번호",
-            placeholder="팀 생성 시 등록한 안전관리자 비밀번호 입력",
+            "작업관리자 모드 진입 비밀번호",
+            placeholder="팀 생성 시 등록한 작업관리자 비밀번호 입력",
             type="password",
             key="login_manager_password"
         )
 
         worker_name = ""
-        work_name = "안전관리자 대시보드"
+        work_name = "작업관리자 대시보드"
 
     # =========================
     # 안내 문구
@@ -2043,7 +2043,7 @@ def show_login():
         else:
 
             if not manager_password_input.strip():
-                st.warning("안전관리자 비밀번호를 입력해 주세요.")
+                st.warning("작업관리자 비밀번호를 입력해 주세요.")
                 return
 
             result = (
@@ -2061,14 +2061,14 @@ def show_login():
             saved_manager_password = team_info.get("manager_password", "")
 
             if manager_password_input.strip() != saved_manager_password:
-                st.error("안전관리자 비밀번호가 일치하지 않습니다.")
+                st.error("작업관리자 비밀번호가 일치하지 않습니다.")
                 return
 
             st.session_state.mode = mode
-            st.session_state.manager_name = team_info.get("manager_name", "안전관리자")
+            st.session_state.manager_name = team_info.get("manager_name", "작업관리자")
 
-            st.session_state.work_data["작업자명"] = st.session_state.get("manager_name", "안전관리자")
-            st.session_state.work_data["작업명"] = "안전관리자 대시보드"
+            st.session_state.work_data["작업자명"] = st.session_state.get("manager_name", "작업관리자")
+            st.session_state.work_data["작업명"] = "작업관리자 대시보드"
             st.session_state.work_data["접속모드"] = mode
             st.session_state.work_data["접속시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2136,7 +2136,7 @@ def show_create_team():
     st.markdown("""
 <div class="create-team-title">새 TBM 작업방 만들기</div>
 <div class="create-team-subtitle">
-    안전관리자가 팀명, 비밀번호, 작업자 명단을 등록합니다.
+    작업관리자가 팀명, 비밀번호, 작업자 명단을 등록합니다.
 </div>
 """, unsafe_allow_html=True)
 
@@ -2157,27 +2157,27 @@ def show_create_team():
         key="create_team_password"
     )
 
-    st.markdown('<div class="create-field-label">안전관리자 비밀번호</div>', unsafe_allow_html=True)
+    st.markdown('<div class="create-field-label">작업관리자 비밀번호</div>', unsafe_allow_html=True)
     manager_password = st.text_input(
-        "안전관리자 비밀번호",
-        placeholder="안전관리자 모드 진입 비밀번호",
+        "작업관리자 비밀번호",
+        placeholder="작업관리자 모드 진입 비밀번호",
         type="password",
         label_visibility="collapsed",
         key="create_manager_password"
     )
 
-    st.markdown('<div class="create-field-label">안전관리자 비밀번호 확인</div>', unsafe_allow_html=True)
+    st.markdown('<div class="create-field-label">작업관리자 비밀번호 확인</div>', unsafe_allow_html=True)
     manager_password_confirm = st.text_input(
-        "안전관리자 비밀번호 확인",
+        "작업관리자 비밀번호 확인",
         placeholder="비밀번호를 한 번 더 입력하세요",
         type="password",
         label_visibility="collapsed",
         key="create_manager_password_confirm"
     )
 
-    st.markdown('<div class="create-field-label">안전관리자명</div>', unsafe_allow_html=True)
+    st.markdown('<div class="create-field-label">작업관리자명</div>', unsafe_allow_html=True)
     manager_name = st.text_input(
-        "안전관리자명",
+        "작업관리자명",
         placeholder="예: 홍길동",
         label_visibility="collapsed",
         key="create_manager_name"
@@ -2240,16 +2240,16 @@ def show_create_team():
             st.warning("팀 비밀번호를 입력해 주세요.")
 
         elif not manager_password.strip():
-            st.warning("안전관리자 비밀번호를 입력해 주세요.")
+            st.warning("작업관리자 비밀번호를 입력해 주세요.")
 
         elif not manager_password_confirm.strip():
-            st.warning("안전관리자 비밀번호 확인을 입력해 주세요.")
+            st.warning("작업관리자 비밀번호 확인을 입력해 주세요.")
 
         elif manager_password.strip() != manager_password_confirm.strip():
-            st.error("안전관리자 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
+            st.error("작업관리자 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
 
         elif not manager_name.strip():
-            st.warning("안전관리자명을 입력해 주세요.")
+            st.warning("작업관리자명을 입력해 주세요.")
 
         elif not st.session_state.temp_workers:
             st.warning("작업자 명단을 1명 이상 등록해 주세요.")
@@ -2290,7 +2290,7 @@ def show_create_team():
 def run_risk_scoring(chemical, work_type, time_slot):
     """
     화학물질명/작업유형코드/시간대를 받아 위험도 점수를 계산한다.
-    작업자 모드(show_work_input)와 안전관리자 모드(show_task_create)가 공유해서 쓴다.
+    작업자 모드(show_work_input)와 작업관리자 모드(show_task_create)가 공유해서 쓴다.
     실패 시 (None, 에러메시지)를 반환한다.
     """
     chem_id, chem_name, err = get_chemid_by_name(
@@ -2356,7 +2356,7 @@ def show_work_input():
     st.markdown("""
     <div>
         <div class="hero-title">오늘의 작업 정보를 확인하세요.</div>
-        <div class="hero-subtitle">안전관리자가 등록한 작업 정보를 기준으로 TBM을 진행합니다.</div>
+        <div class="hero-subtitle">작업관리자가 등록한 작업 정보를 기준으로 TBM을 진행합니다.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2439,7 +2439,7 @@ def show_work_input():
     if st.button("⚠️ 위험도 분석하기", use_container_width=True):
 
         if not work_location or work_location == "-":
-            st.warning("선택한 작업의 작업장소 정보가 없습니다. 안전관리자에게 작업정보를 확인해 주세요.")
+            st.warning("선택한 작업의 작업장소 정보가 없습니다. 작업관리자에게 작업정보를 확인해 주세요.")
             return
 
         if not chemical or not str(chemical).strip():
@@ -2519,14 +2519,14 @@ def show_bottom_nav():
     # 통째로 초기화되므로, st.button + st.rerun()으로 같은 세션 안에서 화면만 전환한다.
     #
     # 네비게이션 대상은 실제로 지금 진행 중인 흐름(작업자: task_info→checklist→journal,
-    # 안전관리자: manager→task_create)의 화면으로만 연결한다. 예전에 쓰던 수동 위험도
+    # 작업관리자: manager→task_create)의 화면으로만 연결한다. 예전에 쓰던 수동 위험도
     # 분석 흐름(input/result)은 현재 작업 등록 기반 흐름과 맞지 않아(위험도 재계산,
     # AI 재호출 등) 더 이상 네비게이션 대상으로 노출하지 않는다.
 
     current_page = st.session_state.get("page", "task_info")
     current_mode = st.session_state.get("mode", "작업자")
 
-    if current_mode == "안전관리자":
+    if current_mode == "작업관리자":
         nav_items = [
             ("manager", "▦"),
             ("task_create", "📝"),
@@ -3631,7 +3631,7 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
         "leader_potition": leader_log.get("leader_position", "") if leader_log else "",
         "leader_name": leader_log.get("leader_name", "") if leader_log else "",
 
-        # 위험요인/안전대책은 이제 작업자별이 아니라 안전관리자가 "오늘 작업 입력"에서
+        # 위험요인/안전대책은 이제 작업자별이 아니라 작업관리자가 "오늘 작업 입력"에서
         # 한 번 분석해 둔 값(work_tasks)을 그대로 쓴다.
         "main_hazard_1": task.get("main_hazard_1", ""),
         "main_hazard_2": task.get("main_hazard_2", ""),
@@ -3652,7 +3652,7 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
     except Exception as e:
         print("위험성평가 실시여부 표시 오류:", e)
 
-    # 중점위험요인 선정 / 대책 (안전관리자가 "오늘 작업 입력"에서 선택한 값)
+    # 중점위험요인 선정 / 대책 (작업관리자가 "오늘 작업 입력"에서 선택한 값)
     try:
         table.cell(8, 4).text = task.get("selected_hazard", "") or ""
         table.cell(9, 4).text = task.get("selected_measure", "") or ""
@@ -4346,7 +4346,7 @@ def render_similar_accident_card(similar_accident_text):
 
 def render_selectable_hazard_cards(risk_items, session_key):
     """
-    "AI 분석 주요 위험요인" 카드 자체를 버튼으로 만들어 렌더링한다 (안전관리자 전용).
+    "AI 분석 주요 위험요인" 카드 자체를 버튼으로 만들어 렌더링한다 (작업관리자 전용).
     카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
@@ -4376,7 +4376,7 @@ def render_selectable_hazard_cards(risk_items, session_key):
 
 def render_selectable_measure_cards(measure_items, session_key):
     """
-    "안전 및 사고 예방대책" 카드 자체를 버튼으로 만들어 렌더링한다 (안전관리자 전용).
+    "안전 및 사고 예방대책" 카드 자체를 버튼으로 만들어 렌더링한다 (작업관리자 전용).
     카드를 클릭하면 선택/해제(토글)되고, 선택된 항목의 인덱스는 st.session_state[session_key]에 저장된다.
     """
     st.markdown("""
@@ -4407,7 +4407,7 @@ def render_selectable_measure_cards(measure_items, session_key):
 def run_ai_hazard_analysis(result, current_month=None):
     """
     위험도 계산 결과(result)를 바탕으로 AI 위험요인/안전대책/유사사고 텍스트를 생성한다.
-    작업자 모드(show_risk_result)와 안전관리자 모드(show_task_create)가 공유해서 쓴다.
+    작업자 모드(show_risk_result)와 작업관리자 모드(show_task_create)가 공유해서 쓴다.
     current_month를 넘기면 유사사고사례 매칭 시 그 월을 기준으로 쓴다.
     """
     material_risk_items, work_risk_items, material_measure_items, work_measure_items = get_risk_and_measure_messages(result)
@@ -4561,7 +4561,7 @@ def show_risk_result():
 def show_task_info():
     """
     작업자가 오늘 작업을 선택하고 접속했을 때 보여주는 화면.
-    위험도를 다시 계산하지 않고, 안전관리자가 "오늘 작업 입력"에서
+    위험도를 다시 계산하지 않고, 작업관리자가 "오늘 작업 입력"에서
     미리 분석해 둔 결과(work_tasks 테이블 값)를 그대로 보여준다.
     """
     work_data = st.session_state.get("work_data", {})
@@ -4606,7 +4606,7 @@ def show_task_info():
 <div class="result-report-label">RISK ANALYSIS REPORT</div>
 <div class="result-title">오늘의 작업 위험도는</div>
 <div class="result-subtitle">
-    안전관리자가 사전에 분석한 오늘 작업의 위험수준입니다.
+    작업관리자가 사전에 분석한 오늘 작업의 위험수준입니다.
 </div>
 """, unsafe_allow_html=True)
 
@@ -4641,7 +4641,7 @@ def show_task_info():
                 unsafe_allow_html=True
             )
     else:
-        st.warning("안전관리자가 아직 이 작업의 위험도 분석을 등록하지 않았습니다. 안전관리자에게 확인해 주세요.")
+        st.warning("작업관리자가 아직 이 작업의 위험도 분석을 등록하지 않았습니다. 작업관리자에게 확인해 주세요.")
 
     if st.button("☑️ TBM 체크리스트 확인", use_container_width=True):
         st.session_state.page = "checklist"
@@ -5084,7 +5084,7 @@ def show_journal():
 
     st.markdown("""
 <div class="journal-message-box">
-    ✅ 종료 미팅 내역은 안전관리자 작업보드에 기록될 예정입니다.
+    ✅ 종료 미팅 내역은 작업관리자 작업보드에 기록될 예정입니다.
 </div>
 """, unsafe_allow_html=True)
 
@@ -5096,7 +5096,7 @@ def show_journal():
 <div class="journal-submit-card">
     <div class="journal-submit-title">일지 작성을 완료하시겠습니까?</div>
     <div class="journal-submit-desc">
-        작성된 내용은 추후 안전관리자 작업로그 화면에 반영되도록 연결할 수 있습니다.
+        작성된 내용은 추후 작업관리자 작업로그 화면에 반영되도록 연결할 수 있습니다.
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -5216,8 +5216,8 @@ def show_task_create():
 
         return
 
-    if st.session_state.get("mode") != "안전관리자":
-        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
+    if st.session_state.get("mode") != "작업관리자":
+        st.warning("작업관리자 인증이 필요합니다. 작업모드 선택 화면에서 작업관리자로 접속해 주세요.")
 
         if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
             st.session_state.page = "login"
@@ -5227,7 +5227,7 @@ def show_task_create():
 
     render_topbar("task_create", "오늘 작업 입력", "manager-title", back_page="manager", help_key="manager")
 
-    # 안전관리자 기기(브라우저)의 현재 접속 시각. 위험도 계산용 시간(작업 시작 시간)에는
+    # 작업관리자 기기(브라우저)의 현재 접속 시각. 위험도 계산용 시간(작업 시작 시간)에는
     # 쓰지 않고, 유사사고사례를 월(月) 기준으로 찾을 때만 사용한다.
     client_dt = get_client_datetime()
 
@@ -5516,7 +5516,7 @@ def show_task_create():
         chemical_resolved = resolve_chemical_alias(str(tc_chemical).strip())
         work_type_code = work_type_map[tc_work_type_display]
 
-        # 자동 시간 감지(get_client_datetime) 대신, 안전관리자가 직접 입력한
+        # 자동 시간 감지(get_client_datetime) 대신, 작업관리자가 직접 입력한
         # 작업 시작 시간을 위험도 계산에 그대로 사용한다.
         start_dt = datetime.combine(datetime.now().date(), tc_start_time)
         time_slot, _ = get_current_time_slot(start_dt)
@@ -5537,7 +5537,7 @@ def show_task_create():
             result["작업명"] = tc_work_name.strip()
             result["작업내용"] = tc_work_content.strip()
 
-            # 유사사고사례의 "월" 기준은 작업 시작시간이 아니라 안전관리자
+            # 유사사고사례의 "월" 기준은 작업 시작시간이 아니라 작업관리자
             # 기기의 현재 접속 시각으로 판정한다.
             current_month = client_dt.month if client_dt else datetime.now().month
 
@@ -5705,10 +5705,10 @@ def show_manager_dashboard():
 
         return
 
-    # team_id만으로는 안전관리자 비밀번호 인증 여부를 알 수 없다 — 작업자가 URL 등으로
+    # team_id만으로는 작업관리자 비밀번호 인증 여부를 알 수 없다 — 작업자가 URL 등으로
     # 이 화면에 직접 진입해 관리자 대시보드를 보는 것을 막는다.
-    if st.session_state.get("mode") != "안전관리자":
-        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
+    if st.session_state.get("mode") != "작업관리자":
+        st.warning("작업관리자 인증이 필요합니다. 작업모드 선택 화면에서 작업관리자로 접속해 주세요.")
 
         if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
             st.session_state.page = "login"
@@ -5720,7 +5720,7 @@ def show_manager_dashboard():
         cleanup_expired_signatures(st.session_state.get("team_id"))
         st.session_state["_signature_cleanup_done"] = True
 
-    # 안전관리자 기기의 로컬 날짜. "오늘 작업" 판정에 서버(UTC) 날짜를 쓰면
+    # 작업관리자 기기의 로컬 날짜. "오늘 작업" 판정에 서버(UTC) 날짜를 쓰면
     # 한국 시간 00시~09시 사이에는 하루 어긋난 작업 목록이 나오므로 이걸 기준으로 삼는다.
     manager_client_dt = get_client_datetime()
 
@@ -5862,7 +5862,7 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
 </style>
 """, unsafe_allow_html=True)
 
-    render_topbar("manager", "안전관리자 대시보드", "manager-title", help_key="manager")
+    render_topbar("manager", "작업관리자 대시보드", "manager-title", help_key="manager")
 
     if st.button("📝 오늘 작업 입력", key="goto_task_create_btn", use_container_width=True):
         st.session_state.page = "task_create"
@@ -6142,8 +6142,8 @@ def show_task_detail():
 
         return
 
-    if st.session_state.get("mode") != "안전관리자":
-        st.warning("안전관리자 인증이 필요합니다. 작업모드 선택 화면에서 안전관리자로 접속해 주세요.")
+    if st.session_state.get("mode") != "작업관리자":
+        st.warning("작업관리자 인증이 필요합니다. 작업모드 선택 화면에서 작업관리자로 접속해 주세요.")
 
         if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
             st.session_state.page = "login"
