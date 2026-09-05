@@ -3401,10 +3401,10 @@ def _mark_checkbox(cell, yes):
 
 SIGNATURE_BUCKET = "tbm-signatures"
 
-ATTENDEE_NAME_COLS = (0, 5, 9)
-ATTENDEE_NAME_TO_SIG_COL = {0: 2, 5: 8, 9: 11}
-ATTENDEE_FIRST_ROW = 22
-ATTENDEE_ORIGINAL_LAST_ROW = 25
+ATTENDEE_NAME_COLS = (0, 5, 8)
+ATTENDEE_NAME_TO_SIG_COL = {0: 2, 5: 7, 8: 10}
+ATTENDEE_FIRST_ROW = 17
+ATTENDEE_ORIGINAL_LAST_ROW = 20
 
 SIGNATURE_CELL_WIDTH_EMU = 950000   # 표의 서명 칸 실측 폭(약 1.1인치)보다 살짝 작게
 SIGNATURE_CELL_HEIGHT_EMU = 320000  # 행 높이가 과도하게 늘어나지 않도록 하는 상한
@@ -3696,7 +3696,7 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
             for log in logs
             if log.get("daily_safety_check_result")
         ]
-        _set_cell_lines(table.cell(17, 0), daily_check_lines)
+        _set_cell_lines(table.cell(12, 0), daily_check_lines)
     except Exception as e:
         print("작업 전 일일 안전점검 시행 결과 입력 오류:", e)
 
@@ -3707,7 +3707,7 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
             for log in logs
             if log.get("closing_meeting_result")
         ]
-        _set_cell_lines(table.cell(19, 0), closing_meeting_lines)
+        _set_cell_lines(table.cell(14, 0), closing_meeting_lines)
     except Exception as e:
         print("작업 후 종료 미팅 입력 오류:", e)
 
