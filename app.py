@@ -609,11 +609,32 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
     margin-bottom: 8px;
 }
 
-/* 작업 시작 시간(시/분) 숫자 입력 두 칸을 나란히 배치한다. 이 앱은
-   max-width: 480px짜리 모바일 폭 레이아웃이라, st.columns를 그대로 두면
-   Streamlit이 좁은 화면에서 컬럼을 자동으로 세로로 쌓아버리므로 막아준다. */
-div[class*="st-key-tc_time_input_row"] div[data-testid="stHorizontalBlock"] {
-    flex-wrap: nowrap !important;
+/* 작업 시작 시간(시/분) 숫자 입력은 세로로 쌓고, 각 입력창 폭을 숫자 두 자리 +
+   단위 글자만 들어갈 만큼 좁게 고정한다(값 옆의 -/+ 버튼은 Streamlit이 기본
+   제공하는 것을 그대로 쓰고, 입력창만 좁혀서 나란히 붙어 보이게 한다). */
+div[class*="st-key-tc_start_hour_input"] div[data-baseweb="input"],
+div[class*="st-key-tc_start_minute_input"] div[data-baseweb="input"] {
+    max-width: 96px !important;
+    flex: 0 0 auto !important;
+    position: relative;
+}
+
+div[class*="st-key-tc_start_hour_input"] input,
+div[class*="st-key-tc_start_minute_input"] input {
+    padding-right: 30px !important;
+}
+
+/* JS로 삽입하는 "시"/"분" 단위 글자. 입력창(위 규칙으로 이미 좁혀진 data-baseweb
+   래퍼) 오른쪽 안쪽에 겹쳐 표시해, 숫자 바로 뒤에 단위가 붙은 것처럼 보이게 한다. */
+.tc-time-unit-suffix {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    font-weight: 800;
+    color: #45474c;
+    font-size: 14px;
 }
 
 .selected-chip {
@@ -1315,6 +1336,15 @@ div[class*="st-key-inline_row_"] [data-testid="stColumn"]:last-child,
 div[class*="st-key-tbm_history_list"] [data-testid="stColumn"]:last-child {
     flex: 0 0 auto !important;
     width: auto !important;
+    min-width: 0 !important;
+}
+
+/* 브라우저는 flex 아이템의 기본 min-width를 내용물 크기(auto)로 잡기 때문에,
+   버튼 쪽만 고정폭으로 만들어도 입력창이 든 앞쪽 컬럼이 그 이상 줄어들지
+   못해 좁은 화면에서 버튼이 화면 밖으로 밀려난다. 앞쪽 컬럼에도 min-width:0을
+   줘서 남는 공간만큼 실제로 줄어들 수 있게 한다. */
+div[class*="st-key-inline_row_"] [data-testid="stColumn"]:not(:last-child),
+div[class*="st-key-tbm_history_list"] [data-testid="stColumn"]:not(:last-child) {
     min-width: 0 !important;
 }
 </style>
@@ -5369,24 +5399,21 @@ def show_task_create():
     if _time_out_of_range:
         st.warning("작업 시작 시간은 시 0~23, 분 0~59 범위로 입력해 주세요. 값을 범위 안으로 보정했습니다.")
 
-    with st.container(key="tc_time_input_row"):
-        tc_hour_col, tc_minute_col = st.columns(2)
+    tc_start_hour = st.number_input(
+        "시",
+        step=1,
+        value=_now_local.hour,
+        key="tc_start_hour_input",
+        label_visibility="collapsed",
+    )
 
-        with tc_hour_col:
-            tc_start_hour = st.number_input(
-                "시",
-                step=1,
-                value=_now_local.hour,
-                key="tc_start_hour_input",
-            )
-
-        with tc_minute_col:
-            tc_start_minute = st.number_input(
-                "분",
-                step=1,
-                value=_now_local.minute,
-                key="tc_start_minute_input",
-            )
+    tc_start_minute = st.number_input(
+        "분",
+        step=1,
+        value=_now_local.minute,
+        key="tc_start_minute_input",
+        label_visibility="collapsed",
+    )
 
     # 모바일에서 이 입력창을 탭했을 때 문자 키패드가 아니라 숫자 키패드가 바로 뜨도록,
     # number_input이 만든 실제 <input>에 inputmode="numeric"을 부여한다. Streamlit에는
@@ -5399,10 +5426,10 @@ def show_task_create():
     streamlit_js_eval(
         js_expressions="""
         (function() {
-            function initFor(k) {
+            function initFor(k, unit) {
                 var el = parent.document.querySelector('.st-key-' + k + ' input');
                 if (!el) {
-                    setTimeout(function() { initFor(k); }, 200);
+                    setTimeout(function() { initFor(k, unit); }, 200);
                     return;
                 }
                 if (el.dataset.numericKeypadInit) return;
@@ -5413,8 +5440,20 @@ def show_task_create():
                 }
                 apply();
                 new MutationObserver(apply).observe(el, { attributes: true, attributeFilter: ['inputmode', 'pattern'] });
+
+                // 숫자 입력창 바로 뒤에 "시"/"분" 단위 글자를 겹쳐 붙인다. 이 span은
+                // input의 부모(data-baseweb="input" 래퍼) 안에 넣어야 CSS의
+                // position:relative 기준과 맞아 입력창 오른쪽 안쪽에 정확히 고정된다.
+                var wrap = el.parentElement;
+                if (wrap && !wrap.querySelector('.tc-time-unit-suffix')) {
+                    var span = parent.document.createElement('span');
+                    span.className = 'tc-time-unit-suffix';
+                    span.textContent = unit;
+                    wrap.appendChild(span);
+                }
             }
-            ['tc_start_hour_input', 'tc_start_minute_input'].forEach(initFor);
+            initFor('tc_start_hour_input', '시');
+            initFor('tc_start_minute_input', '분');
             return 'ok';
         })()
         """,
