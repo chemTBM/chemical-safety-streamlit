@@ -199,9 +199,83 @@ streamlit_js_eval(
 
 st.markdown("""
 <style>
+/* =========================
+   다크모드 / 라이트모드 색상 변수
+   라이트 값은 원래 하드코딩돼 있던 값 그대로이고(변경 없음), 다크 값만
+   새로 추가했다. 시스템이 다크모드면 아래 두 번째 블록이 덮어써서
+   카드 배경/글씨색이 통째로 다크 팔레트로 바뀐다.
+========================= */
+:root {
+    --bg-f1f5f9: #f1f5f9;
+    --bg-ffffff: #ffffff;
+    --bg-f0edef: #f0edef;
+    --bg-f5f3f4: #f5f3f4;
+    --bg-f7f7f7: #f7f7f7;
+    --bg-f7f8fa: #f7f8fa;
+    --bg-fbf8fa: #fbf8fa;
+    --bg-f5f9ff: #f5f9ff;
+    --bg-f5f7fb: #f5f7fb;
+    --bg-ffdad6: #ffdad6;
+    --bg-ffedd5: #ffedd5;
+    --bg-d8e2ff: #d8e2ff;
+    --bg-dcfce7: #dcfce7;
+
+    --text-091426: #091426;
+    --text-45474c: #45474c;
+    --text-75777d: #75777d;
+    --text-8a8f98: #8a8f98;
+    --text-8b8f98: #8b8f98;
+    --text-31343a: #31343a;
+    --text-1b1b1d: #1b1b1d;
+    --text-ba1a1a: #ba1a1a;
+    --text-93000a: #93000a;
+    --text-0058be: #0058be;
+    --text-0b3fa5: #0b3fa5;
+    --text-004395: #004395;
+    --text-16a34a: #16a34a;
+    --text-15803d: #15803d;
+    --text-ea580c: #ea580c;
+    --text-ef4444: #ef4444;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-f1f5f9: #0b1220;
+        --bg-ffffff: #141b2d;
+        --bg-f0edef: #1f2937;
+        --bg-f5f3f4: #1b2436;
+        --bg-f7f7f7: #1b2436;
+        --bg-f7f8fa: #202a40;
+        --bg-fbf8fa: #10182a;
+        --bg-f5f9ff: #16202f;
+        --bg-f5f7fb: #16202f;
+        --bg-ffdad6: #4a1d1d;
+        --bg-ffedd5: #4a3418;
+        --bg-d8e2ff: #1c2c4d;
+        --bg-dcfce7: #16351f;
+
+        --text-091426: #f1f5f9;
+        --text-45474c: #cbd3dc;
+        --text-75777d: #9aa4b2;
+        --text-8a8f98: #9aa4b2;
+        --text-8b8f98: #9aa4b2;
+        --text-31343a: #cbd3dc;
+        --text-1b1b1d: #e5e7eb;
+        --text-ba1a1a: #ff8080;
+        --text-93000a: #ff9b9b;
+        --text-0058be: #6fa8ff;
+        --text-0b3fa5: #6fa8ff;
+        --text-004395: #5b93e8;
+        --text-16a34a: #4ade80;
+        --text-15803d: #4ade80;
+        --text-ea580c: #fb923c;
+        --text-ef4444: #f87171;
+    }
+}
+
 /* 전체 배경 */
 .stApp {
-    background: #f1f5f9;
+    background: var(--bg-f1f5f9);
 }
 
 /* Streamlit 기본 여백
@@ -243,17 +317,17 @@ st.markdown("""
 .login-title {
     font-size: 25px;
     font-weight: 800;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .login-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
 }
 
 /* 메인 카드 */
 .login-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 18px;
     padding: 28px;
@@ -274,8 +348,8 @@ st.markdown("""
     padding: 16px 10px;
     text-align: center;
     border: 2px solid transparent;
-    background: #f0edef;
-    color: #45474c;
+    background: var(--bg-f0edef);
+    color: var(--text-45474c);
     font-weight: 700;
 }
 
@@ -296,7 +370,7 @@ st.markdown("""
 
 /* 안내 박스 */
 .info-box {
-    background: #f5f3f4;
+    background: var(--bg-f5f3f4);
     border: 1px solid rgba(197,198,205,0.5);
     border-radius: 14px;
     padding: 14px;
@@ -307,13 +381,13 @@ st.markdown("""
 }
 
 .info-icon {
-    color: #ba1a1a;
+    color: var(--text-ba1a1a);
     font-size: 20px;
     line-height: 1.4;
 }
 
 .info-text {
-    color: #45474c;
+    color: var(--text-45474c);
     font-size: 13px;
     line-height: 1.55;
 }
@@ -329,23 +403,23 @@ div.stButton > button {
     border-radius: 12px;
     font-size: 16px;
     font-weight: 800;
-    background: #f7f7f7;
-    color: #1b1b1d;
+    background: var(--bg-f7f7f7);
+    color: var(--text-1b1b1d);
     border: 1px solid #d7d9e0;
     min-height: 46px;
 }
 
 div.stButton > button:hover {
-    background: #f7f8fa;
+    background: var(--bg-f7f8fa);
     border-color: #b9bcc6;
-    color: #1b1b1d;
+    color: var(--text-1b1b1d);
 }
 
 /* 하단 푸터 */
 .login-footer {
     text-align: center;
     margin-top: 28px;
-    color: #75777d;
+    color: var(--text-75777d);
     font-size: 12px;
 }
 
@@ -371,7 +445,7 @@ div.stButton > button:hover {
     position: sticky;
     top: 2px;
     z-index: 100;
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
     padding: 14px 4px 12px 4px;
     margin-bottom: 20px;
@@ -393,45 +467,45 @@ div.stButton > button:hover {
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: #f0edef;
+    background: var(--bg-f0edef);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 800;
 }
 
 .result-app-title {
     font-size: 22px;
     font-weight: 800;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .result-report-label {
     font-size: 11px;
     letter-spacing: 0.08em;
     font-weight: 800;
-    color: #75777d;
+    color: var(--text-75777d);
     margin-bottom: 4px;
 }
 
 .result-title {
     font-size: 30px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     line-height: 1.25;
     margin-bottom: 6px;
 }
 
 .result-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.45;
     margin-bottom: 18px;
 }
 
 .result-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 18px;
     padding: 18px;
@@ -455,7 +529,7 @@ div.stButton > button:hover {
 .result-card-title {
     font-size: 18px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .message-item {
@@ -472,14 +546,14 @@ div.stButton > button:hover {
 .message-num {
     font-size: 13px;
     font-weight: 900;
-    color: #ba1a1a;
+    color: var(--text-ba1a1a);
     min-width: 26px;
 }
 
 .message-text {
     font-size: 14px;
     line-height: 1.5;
-    color: #1b1b1d;
+    color: var(--text-1b1b1d);
 }
 
 .measure-item {
@@ -502,25 +576,25 @@ div.stButton > button:hover {
 .measure-text {
     font-size: 14px;
     line-height: 1.5;
-    color: #1b1b1d;
+    color: var(--text-1b1b1d);
 }
 
 /* 중점위험요인/대책 카드(버튼) 선택 상태: 배경은 그대로 흰색 유지, 테두리만 강조 */
 div[data-testid="stButton"] button[kind="primary"] {
-    background-color: #ffffff !important;
-    color: #1b1b1d !important;
+    background-color: var(--bg-ffffff) !important;
+    color: var(--text-1b1b1d) !important;
     border: 3px solid #2170e4 !important;
     box-shadow: 0 0 0 1px rgba(33, 112, 228, 0.15) !important;
 }
 
 div[data-testid="stButton"] button[kind="primary"]:hover {
-    background-color: #f5f9ff !important;
-    color: #1b1b1d !important;
+    background-color: var(--bg-f5f9ff) !important;
+    color: var(--text-1b1b1d) !important;
     border-color: #2170e4 !important;
 }
 
 div[data-testid="stButton"] button[kind="primary"] p {
-    color: #1b1b1d !important;
+    color: var(--text-1b1b1d) !important;
 }
 
 /* 중점위험요인/대책 카드(버튼) 선택 안 된 상태: 앱 기본 버튼 색(파란 배경)을 덮어써서
@@ -528,19 +602,19 @@ div[data-testid="stButton"] button[kind="primary"] p {
    stElementContainer로 감싸주므로, 버튼의 key 접두사로 카드 버튼만 정확히 골라낸다. */
 div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"],
 div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"] {
-    background-color: #ffffff !important;
-    color: #1b1b1d !important;
+    background-color: var(--bg-ffffff) !important;
+    color: var(--text-1b1b1d) !important;
     border: 1px solid #d7d9e0 !important;
 }
 
 div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"] p,
 div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"] p {
-    color: #1b1b1d !important;
+    color: var(--text-1b1b1d) !important;
 }
 
 div[class*="st-key-tc_selected_hazard_idx_btn_"] button[kind="secondary"]:hover,
 div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover {
-    background-color: #f7f8fa !important;
+    background-color: var(--bg-f7f8fa) !important;
     border-color: #b9bcc6 !important;
 }
 
@@ -566,7 +640,7 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
 
 .result-info-caption {
     font-size: 12px;
-    color: #75777d;
+    color: var(--text-75777d);
     margin-top: 8px;
     margin-bottom: 14px;
 }
@@ -582,7 +656,7 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
 
     z-index: 9999;
 
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
 
     padding: 14px 4px 12px 4px;
@@ -606,31 +680,31 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: #f0edef;
+    background: var(--bg-f0edef);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 800;
 }
 
 .app-title {
     font-size: 22px;
     font-weight: 800;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .hero-title {
     font-size: 27px;
     line-height: 1.25;
     font-weight: 800;
-    color: #091426;
+    color: var(--text-091426);
     margin-bottom: 8px;
 }
 
 .hero-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     margin-bottom: 22px;
 }
 
@@ -639,7 +713,7 @@ div[class*="st-key-tc_selected_measure_idx_btn_"] button[kind="secondary"]:hover
     font-size: 12px;
     letter-spacing: 0.05em;
     font-weight: 800;
-    color: #45474c;
+    color: var(--text-45474c);
     margin-bottom: 8px;
 }
 
@@ -667,7 +741,7 @@ div[class*="st-key-tc_start_minute_input"] input {
     transform: translateY(-50%);
     pointer-events: none;
     font-weight: 800;
-    color: #45474c;
+    color: var(--text-45474c);
     font-size: 14px;
 }
 
@@ -678,7 +752,7 @@ div[class*="st-key-tc_start_minute_input"] input {
     padding: 6px 12px;
     border-radius: 999px;
     background: rgba(33,112,228,0.10);
-    color: #0058be;
+    color: var(--text-0058be);
     border: 1px solid rgba(0,88,190,0.20);
     font-size: 13px;
     font-weight: 700;
@@ -715,7 +789,7 @@ st.markdown("""
     position: sticky;
     top: 4px;
     z-index: 100;
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
     padding: 14px 4px 12px 4px;
     margin-bottom: 20px;
@@ -737,22 +811,22 @@ st.markdown("""
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: #f0edef;
+    background: var(--bg-f0edef);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 800;
 }
 
 .checklist-app-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .checklist-info-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 18px;
     padding: 20px;
@@ -762,8 +836,8 @@ st.markdown("""
 
 .checklist-badge {
     display: inline-block;
-    background: #d8e2ff;
-    color: #0058be;
+    background: var(--bg-d8e2ff);
+    color: var(--text-0058be);
     padding: 6px 12px;
     border-radius: 999px;
     font-size: 11px;
@@ -775,21 +849,21 @@ st.markdown("""
 .checklist-title {
     font-size: 25px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     line-height: 1.25;
     margin-bottom: 6px;
 }
 
 .checklist-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.45;
 }
 
 .checklist-section-title {
     font-size: 19px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     margin: 22px 0 12px 0;
     display: flex;
     align-items: center;
@@ -797,7 +871,7 @@ st.markdown("""
 }
 
 .checklist-item-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 16px;
     padding: 14px 14px;
@@ -806,7 +880,7 @@ st.markdown("""
 }
 
 .checklist-remark-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 16px;
     padding: 16px;
@@ -816,7 +890,7 @@ st.markdown("""
 
 .checklist-small-label {
     font-size: 11px;
-    color: #75777d;
+    color: var(--text-75777d);
     font-weight: 900;
     letter-spacing: 0.08em;
     margin-bottom: 8px;
@@ -824,7 +898,7 @@ st.markdown("""
 
 .checklist-save-note {
     font-size: 12px;
-    color: #75777d;
+    color: var(--text-75777d);
     line-height: 1.45;
     margin-top: 8px;
     margin-bottom: 12px;
@@ -846,7 +920,7 @@ st.markdown("""
     position: sticky;
     top: 4px;
     z-index: 100;
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
     padding: 14px 4px 12px 4px;
     margin-bottom: 20px;
@@ -868,37 +942,37 @@ st.markdown("""
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: #f0edef;
+    background: var(--bg-f0edef);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 800;
 }
 
 .journal-app-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .journal-title {
     font-size: 30px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     line-height: 1.25;
     margin-bottom: 6px;
 }
 
 .journal-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.45;
     margin-bottom: 20px;
 }
 
 .journal-card {
-    background: #ffffff;
+    background: var(--bg-ffffff);
     border: 1px solid #c5c6cd;
     border-radius: 18px;
     padding: 18px;
@@ -916,7 +990,7 @@ st.markdown("""
 .journal-card-title {
     font-size: 18px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .journal-summary-row {
@@ -930,14 +1004,14 @@ st.markdown("""
 
 .journal-summary-label {
     font-size: 12px;
-    color: #75777d;
+    color: var(--text-75777d);
     font-weight: 900;
     letter-spacing: 0.05em;
 }
 
 .journal-summary-value {
     font-size: 14px;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 800;
     text-align: right;
 }
@@ -946,25 +1020,25 @@ st.markdown("""
     display: inline-block;
     padding: 5px 10px;
     border-radius: 8px;
-    background: #ffdad6;
-    color: #93000a;
+    background: var(--bg-ffdad6);
+    color: var(--text-93000a);
     font-size: 12px;
     font-weight: 900;
 }
 
 .journal-message-box {
-    background: #f5f3f4;
+    background: var(--bg-f5f3f4);
     border-radius: 14px;
     padding: 14px;
     font-size: 14px;
     line-height: 1.5;
-    color: #1b1b1d;
+    color: var(--text-1b1b1d);
     margin-top: 12px;
 }
 
 .journal-small-label {
     font-size: 11px;
-    color: #75777d;
+    color: var(--text-75777d);
     font-weight: 900;
     letter-spacing: 0.08em;
     margin-bottom: 8px;
@@ -983,13 +1057,13 @@ st.markdown("""
 .journal-submit-title {
     font-size: 18px;
     font-weight: 900;
-    color: #0058be;
+    color: var(--text-0058be);
     margin-bottom: 6px;
 }
 
 .journal-submit-desc {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.45;
 }
 
@@ -1077,19 +1151,19 @@ st.markdown("""
 
 
 .team-access-input div[data-baseweb="input"] {
-    background: #ffffff !important;
+    background: var(--bg-ffffff) !important;
     border-radius: 999px !important;
     min-height: 58px;
 }
 
 .team-access-input input {
-    color: #091426 !important;
+    color: var(--text-091426) !important;
     font-size: 16px !important;
     font-weight: 700 !important;
 }
 
 .team-access-input input::placeholder {
-    color: #75777d !important;
+    color: var(--text-75777d) !important;
 }
 
 </style>
@@ -1107,7 +1181,7 @@ st.markdown("""
     position: sticky;
     top: 4px;
     z-index: 100;
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
     padding: 14px 4px 12px 4px;
     margin-bottom: 20px;
@@ -1129,38 +1203,38 @@ st.markdown("""
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: #f0edef;
+    background: var(--bg-f0edef);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #091426;
+    color: var(--text-091426);
     font-weight: 900;
 }
 
 .create-team-app-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .create-team-title {
     font-size: 30px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     line-height: 1.25;
     margin-bottom: 6px;
 }
 
 .create-team-subtitle {
     font-size: 14px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.45;
     margin-bottom: 22px;
 }
 
 .create-field-label {
     font-size: 12px;
-    color: #45474c;
+    color: var(--text-45474c);
     font-weight: 900;
     letter-spacing: 0.05em;
     margin: 14px 0 8px 0;
@@ -1172,7 +1246,7 @@ st.markdown("""
     width: 100%;
     background: rgba(33,112,228,0.10);
     border: 1px solid rgba(33,112,228,0.25);
-    color: #0058be;
+    color: var(--text-0058be);
     padding: 10px 13px;
     border-radius: 999px;
     font-size: 14px;
@@ -1183,7 +1257,7 @@ st.markdown("""
 .worker-list-title {
     font-size: 18px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     margin-bottom: 12px;
 }
 
@@ -1199,7 +1273,7 @@ st.markdown("""
     align-items: center;
     background: rgba(33,112,228,0.10);
     border: 1px solid rgba(33,112,228,0.25);
-    color: #0058be;
+    color: var(--text-0058be);
     padding: 7px 11px;
     border-radius: 999px;
     font-size: 13px;
@@ -1211,7 +1285,7 @@ st.markdown("""
     gap: 10px;
     background: rgba(216,226,255,0.55);
     border: 1px solid #adc6ff;
-    color: #004395;
+    color: var(--text-004395);
     padding: 14px;
     border-radius: 14px;
     font-size: 13px;
@@ -1220,14 +1294,14 @@ st.markdown("""
 }
 
 .input-info-box {
-    background: #f5f7fb;
+    background: var(--bg-f5f7fb);
     border: 1px solid #d6d9e0;
     border-radius: 14px;
     padding: 14px 16px;
     margin-bottom: 16px;
     font-size: 15px;
     font-weight: 600;
-    color: #31343a;
+    color: var(--text-31343a);
 }
 
 </style>
@@ -1253,7 +1327,7 @@ div[class*="st-key-topbar_"] {
     margin: 0 !important;
     box-sizing: border-box !important;
 
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border-bottom: 1px solid #c5c6cd;
     border-radius: 0 0 14px 14px;
     padding: 10px 10px !important;
@@ -1291,8 +1365,8 @@ div[class*="st-key-tbhelp_"] button {
     flex-shrink: 0 !important;
     padding: 0 !important;
     border-radius: 999px !important;
-    background: #f0edef !important;
-    color: #091426 !important;
+    background: var(--bg-f0edef) !important;
+    color: var(--text-091426) !important;
     font-weight: 800 !important;
     font-size: 16px !important;
     border: none !important;
@@ -1515,6 +1589,12 @@ def render_help_carousel(image_list):
       border-radius: 12px;
       background: #f1f5f9;
   }}
+  /* 별도 문서(st.iframe)라 부모 페이지 CSS 변수를 못 보므로 다크모드는
+     여기서 직접 처리한다. */
+  @media (prefers-color-scheme: dark) {{
+      .hc-track {{ background: #0b1220; }}
+      .hc-dot {{ background: #3a4358; }}
+  }}
   .hc-track::-webkit-scrollbar {{ display: none; }}
   .hc-track.dragging {{ cursor: grabbing; scroll-snap-type: none; }}
   .hc-slide {{
@@ -1724,8 +1804,8 @@ def show_team_access():
 }
 
 .team-create-btn {
-    background: #f7f7f7;
-    color: #1b1b1d;
+    background: var(--bg-f7f7f7);
+    color: var(--text-1b1b1d);
     border: 1px solid #d7d9e0;
     border-radius: 999px;
     padding: 12px 20px;
@@ -1772,14 +1852,14 @@ def show_team_access():
 
 /* 입력창 */
 div[data-baseweb="input"] {
-    background: white !important;
+    background: var(--bg-ffffff) !important;
     border-radius: 999px !important;
     min-height: 58px !important;
 }
 
 div[data-baseweb="input"] input {
     height: 58px !important;
-    color: #091426 !important;
+    color: var(--text-091426) !important;
     font-weight: 700 !important;
     font-size: 16px !important;
 }
@@ -1789,17 +1869,17 @@ div.stButton > button {
     border-radius: 999px;
     font-size: 17px;
     font-weight: 900;
-    background: #f7f7f7;
-    color: #1b1b1d;
+    background: var(--bg-f7f7f7);
+    color: var(--text-1b1b1d);
     border: 1px solid #d7d9e0;
     box-shadow: 0 6px 16px rgba(0,0,0,0.22);
     margin-top: 8px;
 }
 
 div.stButton > button:hover {
-    background: #f7f8fa;
+    background: var(--bg-f7f8fa);
     border-color: #b9bcc6;
-    color: #1b1b1d;
+    color: var(--text-1b1b1d);
 }
 
 /* 안내문구 */
@@ -2614,7 +2694,7 @@ div[class*="st-key-bottomnavbar"] {
     bottom: 14px !important;
     transform: translateX(-50%) !important;
     width: min(440px, calc(100% - 28px)) !important;
-    background: #fbf8fa;
+    background: var(--bg-fbf8fa);
     border: 1px solid #c5c6cd;
     border-radius: 22px;
     box-shadow: 0 10px 30px rgba(15,23,42,0.18);
@@ -2636,7 +2716,7 @@ div[class*="st-key-bottomnavbar"] [data-testid="stColumn"] {
 div[class*="st-key-navbtn_"] button {
     border: none !important;
     background: transparent !important;
-    color: #8a8f98 !important;
+    color: var(--text-8a8f98) !important;
     font-size: 26px !important;
     font-weight: 900 !important;
     min-height: 52px !important;
@@ -2645,7 +2725,7 @@ div[class*="st-key-navbtn_"] button {
 }
 
 div[class*="st-key-navbtnactive_"] button {
-    color: #0b3fa5 !important;
+    color: var(--text-0b3fa5) !important;
     background: rgba(11,63,165,0.08) !important;
 }
 
@@ -3936,6 +4016,19 @@ def render_traffic_light(score):
             margin-bottom: 14px;
         }}
 
+        /* 이 위젯은 components.html로 렌더링되는 별도 문서라 부모 페이지의
+           CSS 변수(:root)를 못 보므로, 다크모드 대응은 여기서 직접 media
+           query로 처리한다. */
+        @media (prefers-color-scheme: dark) {{
+            .result-card {{
+                background: #141b2d;
+                border-color: #2c3550;
+            }}
+            .result-card-title {{
+                color: #f1f5f9;
+            }}
+        }}
+
         .traffic-wrap {{
             display: flex;
             justify-content: center;
@@ -4044,6 +4137,18 @@ def render_score_card(score):
             color: #8b8f98;
             font-weight: 800;
             margin-bottom: 8px;
+        }}
+
+        /* 별도 문서(components.html)라 부모 페이지 CSS 변수를 못 보므로
+           다크모드는 여기서 직접 처리한다. */
+        @media (prefers-color-scheme: dark) {{
+            .result-card {{
+                background: #141b2d;
+                border-color: #2c3550;
+            }}
+            .score-title, .score-small-label {{
+                color: #9aa4b2;
+            }}
         }}
 
         .gauge-box {{
@@ -4172,6 +4277,21 @@ def render_risk_summary_card(score):
             color: #8b8f98;
             font-weight: 800;
             margin-bottom: 6px;
+        }}
+
+        /* 별도 문서(components.html)라 부모 페이지 CSS 변수를 못 보므로
+           다크모드는 여기서 직접 처리한다. */
+        @media (prefers-color-scheme: dark) {{
+            .summary-card {{
+                background: #141b2d;
+                border-color: #2c3550;
+            }}
+            .score-title, .score-small-label {{
+                color: #9aa4b2;
+            }}
+            .traffic-label {{
+                color: #f1f5f9;
+            }}
         }}
 
         .gauge-box {{
@@ -5813,7 +5933,7 @@ def show_manager_dashboard():
 }
 
 .manager-summary-card {
-    background: white;
+    background: var(--bg-ffffff);
     border: 1px solid #d8dee9;
     border-radius: 16px;
     padding: 14px 10px;
@@ -5824,33 +5944,33 @@ def show_manager_dashboard():
 .manager-summary-label {
     font-size: 12px;
     font-weight: 900;
-    color: #45474c;
+    color: var(--text-45474c);
     margin-bottom: 8px;
 }
 
 .manager-summary-value {
     font-size: 28px;
     font-weight: 950;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .manager-summary-red {
-    color: #ef4444;
+    color: var(--text-ef4444);
 }
 
 .manager-summary-green {
-    color: #16a34a;
+    color: var(--text-16a34a);
 }
 
 .manager-section-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     margin: 24px 0 12px 0;
 }
 
 .log-card {
-    background: white;
+    background: var(--bg-ffffff);
     border: 1px solid #d8dee9;
     border-radius: 16px;
     padding: 14px;
@@ -5868,12 +5988,12 @@ def show_manager_dashboard():
 .log-work-name {
     font-size: 16px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .log-meta {
     font-size: 13px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.5;
 }
 
@@ -5886,13 +6006,13 @@ def show_manager_dashboard():
 }
 
 .status-done {
-    background: #dcfce7;
-    color: #15803d;
+    background: var(--bg-dcfce7);
+    color: var(--text-15803d);
 }
 
 .status-progress {
-    background: #ffedd5;
-    color: #ea580c;
+    background: var(--bg-ffedd5);
+    color: var(--text-ea580c);
 }
 
 .tbm-history-row {
@@ -5902,14 +6022,14 @@ def show_manager_dashboard():
 
 .tbm-history-date {
     font-size: 13px;
-    color: #45474c;
+    color: var(--text-45474c);
     white-space: nowrap;
 }
 
 .tbm-history-name {
     font-size: 15px;
     font-weight: 700;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
@@ -6253,18 +6373,18 @@ def show_task_detail():
 .task-detail-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .manager-section-title {
     font-size: 22px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
     margin: 24px 0 12px 0;
 }
 
 .log-card {
-    background: white;
+    background: var(--bg-ffffff);
     border: 1px solid #d8dee9;
     border-radius: 16px;
     padding: 14px;
@@ -6282,12 +6402,12 @@ def show_task_detail():
 .log-work-name {
     font-size: 16px;
     font-weight: 900;
-    color: #091426;
+    color: var(--text-091426);
 }
 
 .log-meta {
     font-size: 13px;
-    color: #45474c;
+    color: var(--text-45474c);
     line-height: 1.5;
 }
 
@@ -6301,13 +6421,13 @@ def show_task_detail():
 }
 
 .status-done {
-    background: #dcfce7;
-    color: #15803d;
+    background: var(--bg-dcfce7);
+    color: var(--text-15803d);
 }
 
 .status-progress {
-    background: #ffedd5;
-    color: #ea580c;
+    background: var(--bg-ffedd5);
+    color: var(--text-ea580c);
 }
 </style>
 """, unsafe_allow_html=True)
