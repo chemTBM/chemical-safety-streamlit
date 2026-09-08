@@ -163,6 +163,40 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# PWA: 홈 화면 아이콘으로 추가했을 때 주소창 없이 standalone으로 뜨도록
+# manifest와 iOS/Android용 메타태그를 연결한다. 오프라인 캐싱은 목적이 아니다.
+#
+# st.markdown(unsafe_allow_html=True)로는 <head>에 넣을 수 없다 — 그 콘텐츠는
+# React의 dangerouslySetInnerHTML로 <body> 안 div에 꽂히는데, 크롬의 매니페스트
+# 인식(설치 가능 판정, DevTools Application 탭)은 document.head 안의
+# link[rel=manifest]만 찾기 때문에 body에 들어간 manifest 링크는 무시된다.
+# 그래서 실제 JS가 실행되는 streamlit_js_eval로 parent.document.head에 직접
+# 삽입한다(<script>도 st.markdown으로는 실행되지 않아 같은 방식이 필요하다).
+streamlit_js_eval(
+    js_expressions="""
+    (function() {
+        var head = parent.document.head;
+        if (!head.querySelector('link[rel="manifest"]')) {
+            head.insertAdjacentHTML('beforeend', `
+                <link rel="manifest" href="/app/static/manifest.json">
+                <meta name="theme-color" content="#2170e4">
+                <meta name="mobile-web-app-capable" content="yes">
+                <meta name="apple-mobile-web-app-capable" content="yes">
+                <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+                <meta name="apple-mobile-web-app-title" content="안전신호등">
+                <link rel="apple-touch-icon" href="/app/static/icons/icon-192.png">
+            `);
+        }
+        if ('serviceWorker' in parent.navigator) {
+            parent.navigator.serviceWorker.register('/app/static/service-worker.js')
+                .catch(function(err) { console.warn('SW 등록 실패:', err); });
+        }
+        return 'ok';
+    })()
+    """,
+    key="pwa_head_setup",
+)
+
 st.markdown("""
 <style>
 /* 전체 배경 */
