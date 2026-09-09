@@ -181,6 +181,17 @@ st.markdown(
 # 박힌 기본 제목 "Streamlit"으로 앱 이름을 잡아버리는 문제가 있었다.
 # components.html은 진짜 iframe(srcdoc)이라 그 안의 <script>가 정상적으로
 # 실행되고, streamlit_js_eval 같은 백엔드 왕복이 없어 훨씬 빨리 뜬다.
+#
+# 경로는 반드시 "/"로 시작하지 않는 상대경로여야 한다. Streamlit Cloud
+# 배포본은 앱을 자체 뷰어 안의 iframe(경로가 예: https://<app>.streamlit.app/~/+/)
+# 으로 감싸서 서빙하는데, 여기서 parent.document는 그 iframe 문서(=우리 앱의
+# 진짜 최상위 문서)를 가리킨다. href="/app/static/..."처럼 "/"로 시작하는
+# 절대경로는 이 iframe의 실제 위치(.../~/+/)를 무시하고 도메인 루트
+# 기준으로 풀려서 https://<app>.streamlit.app/app/static/... 같은 존재하지
+# 않는 주소가 되고(직접 fetch해서 실패 확인함), 크롬은 이 매니페스트를
+# 조용히 못 읽어와 기본 이름 "Streamlit"으로 폴백한다. 상대경로("/" 없이)는
+# 지금 문서 위치 기준으로 풀리므로 로컬(.../app/static/...)과 Streamlit
+# Cloud(.../~/+/app/static/...) 양쪽에서 각각 올바른 주소로 해석된다.
 components.html(
     """
 <script>
@@ -188,17 +199,17 @@ components.html(
     var head = parent.document.head;
     if (!head.querySelector('link[rel="manifest"]')) {
         head.insertAdjacentHTML('beforeend', `
-            <link rel="manifest" href="/app/static/manifest.json">
+            <link rel="manifest" href="app/static/manifest.json">
             <meta name="theme-color" content="#2170e4">
             <meta name="mobile-web-app-capable" content="yes">
             <meta name="apple-mobile-web-app-capable" content="yes">
             <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
             <meta name="apple-mobile-web-app-title" content="안전신호등">
-            <link rel="apple-touch-icon" href="/app/static/icons/icon-192.png">
+            <link rel="apple-touch-icon" href="app/static/icons/icon-192.png">
         `);
     }
     if ('serviceWorker' in parent.navigator) {
-        parent.navigator.serviceWorker.register('/app/static/service-worker.js')
+        parent.navigator.serviceWorker.register('app/static/service-worker.js')
             .catch(function(err) { console.warn('SW 등록 실패:', err); });
     }
 })();
