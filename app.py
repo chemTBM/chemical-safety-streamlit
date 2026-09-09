@@ -170,31 +170,42 @@ st.markdown(
 # React의 dangerouslySetInnerHTML로 <body> 안 div에 꽂히는데, 크롬의 매니페스트
 # 인식(설치 가능 판정, DevTools Application 탭)은 document.head 안의
 # link[rel=manifest]만 찾기 때문에 body에 들어간 manifest 링크는 무시된다.
-# 그래서 실제 JS가 실행되는 streamlit_js_eval로 parent.document.head에 직접
-# 삽입한다(<script>도 st.markdown으로는 실행되지 않아 같은 방식이 필요하다).
-streamlit_js_eval(
-    js_expressions="""
-    (function() {
-        var head = parent.document.head;
-        if (!head.querySelector('link[rel="manifest"]')) {
-            head.insertAdjacentHTML('beforeend', `
-                <link rel="manifest" href="/app/static/manifest.json">
-                <meta name="theme-color" content="#2170e4">
-                <meta name="mobile-web-app-capable" content="yes">
-                <meta name="apple-mobile-web-app-capable" content="yes">
-                <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-                <meta name="apple-mobile-web-app-title" content="안전신호등">
-                <link rel="apple-touch-icon" href="/app/static/icons/icon-192.png">
-            `);
-        }
-        if ('serviceWorker' in parent.navigator) {
-            parent.navigator.serviceWorker.register('/app/static/service-worker.js')
-                .catch(function(err) { console.warn('SW 등록 실패:', err); });
-        }
-        return 'ok';
-    })()
-    """,
-    key="pwa_head_setup",
+# <script>도 st.markdown으로는 실행되지 않고(innerHTML로 들어간 스크립트는
+# 브라우저가 무시), <img onerror> 같은 인라인 이벤트 핸들러도 Streamlit이
+# unsafe_allow_html로 렌더링할 때 살균(sanitize) 과정에서 속성 자체가
+# 잘려나가 실행되지 않는다(직접 확인함 — onerror 속성이 DOM에 아예 없었다).
+# streamlit_js_eval(커스텀 컴포넌트)로 시도했을 땐 실행은 되지만, 그 컴포넌트가
+# 자체 iframe 로드 + 백엔드와 websocket 핸드셰이크를 거친 뒤에야 우리 코드를
+# 실행해서 페이지가 다 뜨고도 몇 초씩 늦게 manifest가 연결됐다. 그 사이에
+# "홈 화면에 추가"를 누르면 크롬이 아직 manifest를 못 찾아 정적 HTML 셸에
+# 박힌 기본 제목 "Streamlit"으로 앱 이름을 잡아버리는 문제가 있었다.
+# components.html은 진짜 iframe(srcdoc)이라 그 안의 <script>가 정상적으로
+# 실행되고, streamlit_js_eval 같은 백엔드 왕복이 없어 훨씬 빨리 뜬다.
+components.html(
+    """
+<script>
+(function() {
+    var head = parent.document.head;
+    if (!head.querySelector('link[rel="manifest"]')) {
+        head.insertAdjacentHTML('beforeend', `
+            <link rel="manifest" href="/app/static/manifest.json">
+            <meta name="theme-color" content="#2170e4">
+            <meta name="mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+            <meta name="apple-mobile-web-app-title" content="안전신호등">
+            <link rel="apple-touch-icon" href="/app/static/icons/icon-192.png">
+        `);
+    }
+    if ('serviceWorker' in parent.navigator) {
+        parent.navigator.serviceWorker.register('/app/static/service-worker.js')
+            .catch(function(err) { console.warn('SW 등록 실패:', err); });
+    }
+})();
+</script>
+""",
+    height=0,
+    width=0,
 )
 
 st.markdown("""
