@@ -6569,7 +6569,9 @@ def show_task_detail():
             "제출상태": log.get("submit_status", "-")
         })
 
-    csv_data = pd.DataFrame(csv_rows).to_csv(index=False, encoding="utf-8-sig")
+    csv_buffer = BytesIO()
+    pd.DataFrame(csv_rows).to_csv(csv_buffer, index=False, encoding="utf-8-sig")
+    csv_data = csv_buffer.getvalue()
 
     st.download_button(
         label="📥 이 작업의 작업로그 CSV 다운로드",
