@@ -2694,12 +2694,14 @@ def show_bottom_nav():
 
     if current_mode == "작업관리자":
         nav_items = [
+            ("login", "⌂"),
             ("manager", "▦"),
             ("task_create", "📝"),
         ]
     else:
         nav_items = [
-            ("task_info", "⌂"),
+            ("login", "⌂"),
+            ("task_info", "⚠"),
             ("checklist", "☑"),
             ("journal", "✎"),
         ]
