@@ -3701,11 +3701,14 @@ def cleanup_expired_signatures(team_id):
         print("서명 이미지 자동 삭제 오류:", e)
 
 
+TBM_AUTO_END_MINUTES = 15
+
+
 def auto_fill_missing_tbm_end_times(team_id, now_dt=None):
     """TBM 리더가 "TBM 시작 ▶"만 누르고 체크리스트 제출("TBM 완료 및 저장")까지
-    마치지 않은 경우(중간 이탈 등), 시작 시각으로부터 10분이 지나면 종료 시각을
-    "시작 시각 + 10분"으로 자동 채운다. 그래야 회의록(Word)의 TBM 일시가 영영
-    비어있는 상태로 남지 않는다.
+    마치지 않은 경우(중간 이탈 등), 시작 시각으로부터 TBM_AUTO_END_MINUTES분이
+    지나면 종료 시각을 "시작 시각 + TBM_AUTO_END_MINUTES분"으로 자동 채운다.
+    그래야 회의록(Word)의 TBM 일시가 영영 비어있는 상태로 남지 않는다.
     now_dt는 서버 시각과 기기 로컬 시각이 어긋날 수 있으므로 호출부에서
     get_client_datetime() 결과를 넘겨받는다(없으면 서버 시각으로 대체)."""
     if not team_id:
@@ -3730,10 +3733,10 @@ def auto_fill_missing_tbm_end_times(team_id, now_dt=None):
             except (TypeError, ValueError):
                 continue
 
-            if now - start_dt < timedelta(minutes=10):
+            if now - start_dt < timedelta(minutes=TBM_AUTO_END_MINUTES):
                 continue
 
-            auto_end_str = (start_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+            auto_end_str = (start_dt + timedelta(minutes=TBM_AUTO_END_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
             try:
                 supabase.table("work_tasks").update(
                     {"tbm_leader_end_time": auto_end_str}
@@ -3839,7 +3842,8 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
 
     # TBM 일시 = TBM 리더가 "TBM 시작 ▶"을 누른 시각(work_tasks.first_tbm_submitted_at)
     # ~ 체크리스트를 제출("TBM 완료 및 저장")한 시각(work_tasks.tbm_leader_end_time,
-    # 제출 없이 10분이 지나면 자동으로 시작+10분으로 채워짐)의 범위로 표시한다.
+    # 제출 없이 TBM_AUTO_END_MINUTES분이 지나면 자동으로 시작+해당 분으로
+    # 채워짐)의 범위로 표시한다.
     # 리더가 아예 없었던 작업(마이그레이션 이전 데이터 포함)은 시작 시각 자체가
     # 없으므로, 첫 작업자의 작업일지 제출 시각 하나만 단일 시각으로 대체 표시한다.
     tbm_start_raw = task.get("first_tbm_submitted_at")
@@ -6289,8 +6293,16 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
 
         if workers:
             st.write("등록된 작업자")
-            for worker in workers:
-                st.markdown(f"- {worker}")
+            for idx, worker in enumerate(workers):
+                if st.button(
+                    f"👤 {worker}",
+                    key=f"worker_detail_btn_{idx}",
+                    use_container_width=True
+                ):
+                    st.session_state.selected_worker_name = worker
+                    st.session_state.page = "worker_detail"
+                    st.query_params.clear()
+                    st.rerun()
         else:
             st.caption("등록된 작업자가 없습니다.")
 
@@ -6441,6 +6453,213 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
                 st.markdown('<hr class="tbm-history-divider">', unsafe_allow_html=True)
 
     show_bottom_nav()
+
+
+def show_worker_detail():
+    """작업자 한 명이 지금까지 참여한 모든 TBM 이력(일시/시간/참여분)과 누적
+    참여 시간 합계를 보여준다. TBM 시작~종료 시각은 작업(work_tasks) 단위로
+    TBM 리더가 기록하므로(같은 작업에 참여한 모든 작업자가 공유), 이 작업자가
+    참여한 각 작업(work_logs)의 task_id로 work_tasks를 조인해 가져온다."""
+
+    if not st.session_state.get("team_id"):
+        st.warning("팀 접속 정보가 없습니다. 작업팀 접속 화면에서 다시 접속해 주세요.")
+
+        if st.button("작업팀 접속 화면으로 이동", use_container_width=True):
+            st.session_state.page = "team_access"
+            st.query_params.clear()
+            st.rerun()
+
+        return
+
+    if st.session_state.get("mode") != "작업관리자":
+        st.warning("작업관리자 인증이 필요합니다. 작업모드 선택 화면에서 작업관리자로 접속해 주세요.")
+
+        if st.button("작업모드 선택 화면으로 이동", use_container_width=True):
+            st.session_state.page = "login"
+            st.rerun()
+
+        return
+
+    worker_name = st.session_state.get("selected_worker_name")
+
+    if not worker_name:
+        _redirect_with_message("manager", "먼저 대시보드에서 작업자를 선택해 주세요.")
+        return
+
+    st.markdown("""
+<style>
+.manager-section-title {
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--text-091426);
+    margin: 24px 0 12px 0;
+}
+
+.log-card {
+    background: var(--bg-ffffff);
+    border: 1px solid #d8dee9;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 10px;
+    box-shadow: 0 3px 10px rgba(15,23,42,0.06);
+}
+
+.log-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.log-work-name {
+    font-size: 16px;
+    font-weight: 900;
+    color: var(--text-091426);
+}
+
+.log-meta {
+    font-size: 13px;
+    color: var(--text-45474c);
+    line-height: 1.5;
+}
+
+.worker-summary-card {
+    background: var(--bg-ffffff);
+    border: 1px solid #d8dee9;
+    border-radius: 16px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(15,23,42,0.07);
+    margin-bottom: 24px;
+}
+
+.worker-summary-label {
+    font-size: 13px;
+    font-weight: 900;
+    color: var(--text-45474c);
+    margin-bottom: 8px;
+}
+
+.worker-summary-value {
+    font-size: 30px;
+    font-weight: 950;
+    color: var(--text-0b3fa5);
+}
+</style>
+""", unsafe_allow_html=True)
+
+    render_topbar("worker_detail", worker_name, "task-detail-title", back_page="manager", help_key="manager")
+    _flash_pending_message()
+
+    team_id = st.session_state.get("team_id", "")
+
+    try:
+        logs_result = (
+            supabase.table("work_logs")
+            .select("task_id")
+            .eq("team_id", team_id)
+            .eq("worker_name", worker_name)
+            .execute()
+        )
+        task_ids = [row["task_id"] for row in (logs_result.data or []) if row.get("task_id")]
+    except Exception as e:
+        st.error("참여 이력을 불러오지 못했습니다.")
+        st.write(str(e))
+        task_ids = []
+
+    tasks_by_id = {}
+    if task_ids:
+        try:
+            tasks_result = (
+                supabase.table("work_tasks")
+                .select("id, work_name, work_date, first_tbm_submitted_at, tbm_leader_end_time")
+                .in_("id", task_ids)
+                .execute()
+            )
+            tasks_by_id = {t["id"]: t for t in (tasks_result.data or [])}
+        except Exception as e:
+            st.error("작업 정보를 불러오지 못했습니다.")
+            st.write(str(e))
+
+    entries = []
+    total_minutes = 0
+
+    for tid in task_ids:
+        task = tasks_by_id.get(tid)
+        if not task:
+            continue
+
+        start_str = task.get("first_tbm_submitted_at")
+        end_str = task.get("tbm_leader_end_time")
+
+        start_dt = None
+        end_dt = None
+        try:
+            if start_str:
+                start_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S")
+            if end_str:
+                end_dt = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            pass
+
+        if start_dt and end_dt:
+            # 날짜+시간이 함께 저장돼 있어 datetime끼리 그냥 빼면 자정을
+            # 걸치는 경우(예: 23:55 시작~00:05 종료)도 그대로 정확히 계산된다.
+            duration_minutes = round((end_dt - start_dt).total_seconds() / 60)
+            time_range_text = f"{start_dt.strftime('%H:%M')} ~ {end_dt.strftime('%H:%M')}"
+            date_text = start_dt.strftime("%Y-%m-%d")
+            sort_key = start_dt
+            total_minutes += duration_minutes
+            duration_text = f"{duration_minutes}분"
+        else:
+            # TBM 리더가 없어 시작~종료가 기록되지 않은 작업은 날짜만 work_date로
+            # 대체 표시하고, 참여 시간은 집계에서 제외한다.
+            date_text = task.get("work_date") or "-"
+            time_range_text = "-"
+            duration_text = "-"
+            try:
+                sort_key = datetime.strptime(date_text, "%Y-%m-%d")
+            except (TypeError, ValueError):
+                sort_key = datetime.min
+
+        entries.append({
+            "work_name": task.get("work_name", "-"),
+            "date_text": date_text,
+            "time_range_text": time_range_text,
+            "duration_text": duration_text,
+            "sort_key": sort_key,
+        })
+
+    entries.sort(key=lambda e: e["sort_key"], reverse=True)
+
+    st.markdown(f"""
+<div class="worker-summary-card">
+    <div class="worker-summary-label">누적 참여 시간</div>
+    <div class="worker-summary-value">{total_minutes}<span style="font-size:16px;">분</span></div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown('<div class="manager-section-title">TBM 참여 이력</div>', unsafe_allow_html=True)
+
+    if not entries:
+        st.caption("참여한 TBM 이력이 없습니다.")
+    else:
+        for entry in entries:
+            st.markdown(f"""
+<div class="log-card">
+    <div class="log-top-row">
+        <div class="log-work-name">{entry['work_name']}</div>
+    </div>
+    <div class="log-meta">
+        TBM 일시 : {entry['date_text']}<br>
+        시간 : {entry['time_range_text']}<br>
+        참여 시간 : {entry['duration_text']}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    show_bottom_nav()
+
 
 def show_task_detail():
 
@@ -7211,5 +7430,8 @@ elif st.session_state.page == "task_create":
 
 elif st.session_state.page == "task_detail":
     show_task_detail()
+
+elif st.session_state.page == "worker_detail":
+    show_worker_detail()
 
 show_active_help_popup()
