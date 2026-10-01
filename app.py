@@ -6582,7 +6582,6 @@ def show_worker_detail():
             st.write(str(e))
 
     entries = []
-    total_minutes = 0
 
     for tid in task_ids:
         task = tasks_by_id.get(tid)
@@ -6609,7 +6608,6 @@ def show_worker_detail():
             time_range_text = f"{start_dt.strftime('%H:%M')} ~ {end_dt.strftime('%H:%M')}"
             date_text = start_dt.strftime("%Y-%m-%d")
             sort_key = start_dt
-            total_minutes += duration_minutes
             duration_text = f"{duration_minutes}분"
         else:
             # TBM 리더가 없어 시작~종료가 기록되지 않은 작업은 날짜만 work_date로
@@ -6617,6 +6615,7 @@ def show_worker_detail():
             date_text = task.get("work_date") or "-"
             time_range_text = "-"
             duration_text = "-"
+            duration_minutes = None
             try:
                 sort_key = datetime.strptime(date_text, "%Y-%m-%d")
             except (TypeError, ValueError):
@@ -6627,10 +6626,48 @@ def show_worker_detail():
             "date_text": date_text,
             "time_range_text": time_range_text,
             "duration_text": duration_text,
+            "duration_minutes": duration_minutes,
             "sort_key": sort_key,
         })
 
     entries.sort(key=lambda e: e["sort_key"], reverse=True)
+
+    # =========================
+    # 조회 기간 선택
+    # =========================
+    # st.date_input에 (시작일, 종료일) 튜플을 넘기면 범위 선택 모드가 되어,
+    # "YYYY/MM/DD - YYYY/MM/DD" 표시 + 클릭 시 달력 팝업(월 이동 화살표 포함)이
+    # 별도 구현 없이 그대로 제공된다. 기본값은 이번 달(1일~오늘)로 둔다.
+    # min_value/max_value는 일부러 지정하지 않는다 — 지정하면 달력에서 그 범위
+    # 바깥으로 월 이동 자체가 막혀서(예: 최초 기록이 어제면 전월까지만 보임),
+    # 언제든 자유롭게 과거/미래 월로 넘나들 수 있어야 하기 때문이다.
+    today = datetime.now().date()
+    month_start = today.replace(day=1)
+
+    date_range = st.date_input(
+        "조회 기간",
+        value=(month_start, today),
+        key="worker_detail_date_range",
+    )
+
+    # 사용자가 시작일만 고르고 종료일을 아직 안 고른 중간 상태에서는 튜플
+    # 길이가 1이 되므로, 그 경우 직전까지 유효했던 범위를 그대로 유지한다.
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        range_start, range_end = date_range
+        st.session_state.worker_detail_last_valid_range = (range_start, range_end)
+    else:
+        range_start, range_end = st.session_state.get(
+            "worker_detail_last_valid_range", (month_start, today)
+        )
+
+    filtered_entries = [
+        e for e in entries
+        if e["sort_key"] != datetime.min and range_start <= e["sort_key"].date() <= range_end
+    ]
+
+    total_minutes = sum(
+        e["duration_minutes"] for e in filtered_entries if e["duration_minutes"] is not None
+    )
 
     st.markdown(f"""
 <div class="worker-summary-card">
@@ -6641,10 +6678,10 @@ def show_worker_detail():
 
     st.markdown('<div class="manager-section-title">TBM 참여 이력</div>', unsafe_allow_html=True)
 
-    if not entries:
-        st.caption("참여한 TBM 이력이 없습니다.")
+    if not filtered_entries:
+        st.caption("선택한 기간에 참여한 TBM 이력이 없습니다.")
     else:
-        for entry in entries:
+        for entry in filtered_entries:
             st.markdown(f"""
 <div class="log-card">
     <div class="log-top-row">
