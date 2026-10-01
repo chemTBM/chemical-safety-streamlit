@@ -2199,7 +2199,22 @@ def show_login():
             st.session_state.work_data["접속시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if st.session_state.work_data.get("TBM리더여부", False):
-                st.session_state.work_data["TBM시작시간"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                tbm_start_str = (login_client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.work_data["TBM시작시간"] = tbm_start_str
+
+                # TBM 리더가 "TBM 시작 ▶"을 누른 시점을 work_tasks에도 바로 기록한다.
+                # (이전에는 work_data 세션에만 있다가 소실됐다.) IS NULL 가드로, 리더가
+                # 새로고침 등으로 다시 시작해도 최초 1회 시각만 유지된다.
+                start_task_id = st.session_state.work_data.get("task_id", "")
+                if start_task_id:
+                    try:
+                        supabase.table("work_tasks").update(
+                            {"first_tbm_submitted_at": tbm_start_str}
+                        ).eq("id", start_task_id).is_(
+                            "first_tbm_submitted_at", "null"
+                        ).execute()
+                    except Exception as e:
+                        print("TBM 시작시간(first_tbm_submitted_at) 기록 오류:", e)
 
             st.query_params.clear()
 
@@ -2422,12 +2437,18 @@ def show_create_team():
 
         else:
             try:
+                # 작업관리자 본인도 작업자 명단에 자동으로 포함시킨다. 이후에는 다른
+                # 작업자와 동일하게(특별 취급 없이) 명단에서 수정/삭제할 수 있다.
+                final_workers = st.session_state.temp_workers.copy()
+                if manager_name.strip() not in final_workers:
+                    final_workers.append(manager_name.strip())
+
                 saved_team = create_team(
                     team_name=team_name.strip(),
                     team_password=team_password.strip(),
                     manager_name=manager_name.strip(),
                     manager_password=manager_password.strip(),
-                    workers=st.session_state.temp_workers.copy()
+                    workers=final_workers
                 )
 
                 if not saved_team:
@@ -3680,6 +3701,52 @@ def cleanup_expired_signatures(team_id):
         print("서명 이미지 자동 삭제 오류:", e)
 
 
+def auto_fill_missing_tbm_end_times(team_id, now_dt=None):
+    """TBM 리더가 "TBM 시작 ▶"만 누르고 체크리스트 제출("TBM 완료 및 저장")까지
+    마치지 않은 경우(중간 이탈 등), 시작 시각으로부터 10분이 지나면 종료 시각을
+    "시작 시각 + 10분"으로 자동 채운다. 그래야 회의록(Word)의 TBM 일시가 영영
+    비어있는 상태로 남지 않는다.
+    now_dt는 서버 시각과 기기 로컬 시각이 어긋날 수 있으므로 호출부에서
+    get_client_datetime() 결과를 넘겨받는다(없으면 서버 시각으로 대체)."""
+    if not team_id:
+        return
+
+    now = now_dt or datetime.now()
+
+    try:
+        tasks_result = (
+            supabase.table("work_tasks")
+            .select("id, first_tbm_submitted_at, tbm_leader_end_time")
+            .eq("team_id", team_id)
+            .is_("tbm_leader_end_time", "null")
+            .not_.is_("first_tbm_submitted_at", "null")
+            .execute()
+        )
+
+        for task in (tasks_result.data or []):
+            start_str = task.get("first_tbm_submitted_at")
+            try:
+                start_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S")
+            except (TypeError, ValueError):
+                continue
+
+            if now - start_dt < timedelta(minutes=10):
+                continue
+
+            auto_end_str = (start_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                supabase.table("work_tasks").update(
+                    {"tbm_leader_end_time": auto_end_str}
+                ).eq("id", task["id"]).is_(
+                    "tbm_leader_end_time", "null"
+                ).execute()
+            except Exception as e:
+                print("tbm_leader_end_time 자동 채움 오류:", e)
+
+    except Exception as e:
+        print("TBM 종료시각 자동 채움 조회 오류:", e)
+
+
 def _add_attendee_row(table):
     """참석자 표의 마지막 행과 동일한 구조(병합 포함)로 새 행을 하나 복제해 추가한다."""
     last_tr = table.rows[-1]._tr
@@ -3770,19 +3837,34 @@ def generate_tbm_docx(task, logs, signatures_by_worker=None):
     if leader_log is None and logs:
         leader_log = logs[0]
 
-    # TBM 일시 = 그날 작업자 중 TBM을 가장 먼저 "완료 및 저장"한 시각
-    # (work_tasks.first_tbm_submitted_at, show_checklist()에서 최초 1회만 기록됨).
-    # 이 값이 없는 과거 작업(마이그레이션 이전 데이터)은 TBM 리더의 제출 시각으로 대체한다.
-    tbm_end = task.get("first_tbm_submitted_at") or (
-        leader_log.get("tbm_end_time", "") if leader_log else ""
-    )
+    # TBM 일시 = TBM 리더가 "TBM 시작 ▶"을 누른 시각(work_tasks.first_tbm_submitted_at)
+    # ~ 체크리스트를 제출("TBM 완료 및 저장")한 시각(work_tasks.tbm_leader_end_time,
+    # 제출 없이 10분이 지나면 자동으로 시작+10분으로 채워짐)의 범위로 표시한다.
+    # 리더가 아예 없었던 작업(마이그레이션 이전 데이터 포함)은 시작 시각 자체가
+    # 없으므로, 첫 작업자의 작업일지 제출 시각 하나만 단일 시각으로 대체 표시한다.
+    tbm_start_raw = task.get("first_tbm_submitted_at")
+    tbm_end_raw = task.get("tbm_leader_end_time")
 
     tbm_datetime = ""
-    try:
-        end_dt = datetime.strptime(tbm_end, "%Y-%m-%d %H:%M:%S")
-        tbm_datetime = end_dt.strftime("%Y년 %m월 %d일 %H:%M")
-    except Exception:
-        tbm_datetime = tbm_end
+    if tbm_start_raw:
+        try:
+            start_dt = datetime.strptime(tbm_start_raw, "%Y-%m-%d %H:%M:%S")
+            tbm_datetime = start_dt.strftime("%Y년 %m월 %d일 %H:%M")
+            if tbm_end_raw:
+                try:
+                    end_dt = datetime.strptime(tbm_end_raw, "%Y-%m-%d %H:%M:%S")
+                    tbm_datetime += f" ~ {end_dt.strftime('%H:%M')}"
+                except (TypeError, ValueError):
+                    pass
+        except (TypeError, ValueError):
+            tbm_datetime = tbm_start_raw
+    else:
+        fallback_end = leader_log.get("tbm_end_time", "") if leader_log else ""
+        try:
+            fallback_dt = datetime.strptime(fallback_end, "%Y-%m-%d %H:%M:%S")
+            tbm_datetime = fallback_dt.strftime("%Y년 %m월 %d일 %H:%M")
+        except (TypeError, ValueError):
+            tbm_datetime = fallback_end
 
     worker_list = [
         log.get("worker_name", "")
@@ -5115,20 +5197,19 @@ def show_checklist():
         st.session_state.pop("signature_confirmed_png", None)
         st.session_state.pop("signature_confirmed_scope_key", None)
 
-        # 이 작업(task)의 TBM 중 가장 먼저 제출된 건이면 work_tasks.first_tbm_submitted_at에 기록한다.
-        # 작업일지 제출을 기다리지 않고 체크리스트 제출("TBM 완료 및 저장") 시점에 바로 기록해야
-        # 그 직후 회의록(Word)을 생성해도 TBM 일시가 정상적으로 표시된다.
-        # IS NULL 조건으로 갱신하므로, 이미 값이 기록되어 있으면(=다른 작업자가 먼저 제출) 덮어쓰지 않는다.
-        checklist_submit_time_str = (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
-        if task_id:
+        # TBM 리더가 체크리스트를 제출("TBM 완료 및 저장")한 시각을
+        # work_tasks.tbm_leader_end_time에 기록한다. 시작 시각(first_tbm_submitted_at)은
+        # 리더가 "TBM 시작 ▶"을 누른 시점에 이미 기록되므로, 여기서는 제출자가 리더
+        # 본인일 때만 종료 시각을 기록한다 — 리더가 아닌 다른 작업자의 제출은 이
+        # 값에 영향을 주지 않는다.
+        if task_id and work_data.get("TBM리더여부", False):
+            checklist_submit_time_str = (client_dt or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
             try:
                 supabase.table("work_tasks").update(
-                    {"first_tbm_submitted_at": checklist_submit_time_str}
-                ).eq("id", task_id).is_(
-                    "first_tbm_submitted_at", "null"
-                ).execute()
+                    {"tbm_leader_end_time": checklist_submit_time_str}
+                ).eq("id", task_id).execute()
             except Exception as e:
-                print("first_tbm_submitted_at 업데이트 오류:", e)
+                print("tbm_leader_end_time 업데이트 오류:", e)
 
         # 작업모드 선택 화면으로 돌아갔을 때 방금 사용한 작업자명/작업이 그대로
         # 선택돼 있도록, 로그인 화면 위젯의 session_state 값을 미리 채워 둔다.
@@ -5324,9 +5405,9 @@ def show_journal():
         if checklist_is_tbm_leader:
             st.session_state.work_data["TBM종료시간"] = submit_time_str
 
-        # first_tbm_submitted_at은 이제 체크리스트 제출("TBM 완료 및 저장") 시점에
-        # show_checklist()에서 기록한다 — 작업일지 제출과 독립적으로 동작해야 하므로
-        # 여기서는 별도로 갱신하지 않는다.
+        # work_tasks.first_tbm_submitted_at(TBM 시작, 로그인 화면)과
+        # work_tasks.tbm_leader_end_time(TBM 종료, show_checklist())은 작업일지
+        # 제출과 독립적으로 동작해야 하므로 여기서는 갱신하지 않는다.
 
         log_data = {
             "팀ID": st.session_state.get("team_id", ""),
@@ -5941,6 +6022,10 @@ def show_manager_dashboard():
     # 한국 시간 00시~09시 사이에는 하루 어긋난 작업 목록이 나오므로 이걸 기준으로 삼는다.
     manager_client_dt = get_client_datetime()
 
+    if not st.session_state.get("_tbm_leader_end_autofill_done"):
+        auto_fill_missing_tbm_end_times(st.session_state.get("team_id"), manager_client_dt)
+        st.session_state["_tbm_leader_end_autofill_done"] = True
+
     st.markdown("""
 <style>
 .manager-title {
@@ -6153,10 +6238,19 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
 
     st.markdown('<div class="manager-section-title">작업자 관리</div>', unsafe_allow_html=True)
 
+    # text_input의 key를 그대로 두고 session_state.pop()만 하면, rerun 시작 시
+    # 브라우저가 그 위젯에 남아있던(아직 안 지워진) 값을 다시 서버로 올려보내
+    # pop한 자리를 곧바로 덮어써버려 입력창이 안 지워진다(같은 페이지 안에서
+    # 위젯이 그대로 유지되는 rerun이라 브라우저에 "지워라"는 신호가 전달되지
+    # 않기 때문). key 자체를 매번 바꿔 완전히 새 위젯으로 취급되게 해야
+    # 브라우저의 이전 값과 무관하게 항상 빈 기본값으로 새로 마운트된다.
+    if "add_worker_input_version" not in st.session_state:
+        st.session_state.add_worker_input_version = 0
+
     new_worker_name = st.text_input(
         "작업자 추가",
         placeholder="추가할 작업자 이름 입력",
-        key="manager_add_worker_input"
+        key=f"manager_add_worker_input_{st.session_state.add_worker_input_version}"
     )
 
     if st.button("➕ 작업자 추가", key="manager_add_worker_btn", use_container_width=True):
@@ -6169,6 +6263,7 @@ div[data-testid="stMarkdownContainer"] hr.tbm-history-divider {
             )
 
             if success:
+                st.session_state.add_worker_input_version += 1
                 st.success(message)
                 st.rerun()
             else:
@@ -7073,6 +7168,17 @@ if "work_log_csv_path" not in st.session_state:
 # =========================
 # 페이지 실행부
 # =========================
+
+# 화면(페이지)이 바뀔 때마다 스크롤을 맨 위로 되돌린다. st.rerun()은 브라우저
+# 스크롤 위치를 건드리지 않으므로, 그대로 두면 새 화면이 이전 화면에서
+# 스크롤해 둔 위치(예: 맨 아래)부터 보이는 문제가 있었다. page 값이 실제로
+# 바뀐 경우에만 리셋해서, 같은 화면 안에서 체크박스 클릭 등으로 rerun될 때
+# 스크롤이 유지되도록 한다(그렇지 않으면 체크리스트 항목을 체크할 때마다
+# 맨 위로 튕기게 된다).
+if st.session_state.get("last_rendered_page") != st.session_state.page:
+    st.session_state.last_rendered_page = st.session_state.page
+    components.html("<script>parent.window.scrollTo(0, 0);</script>", height=0, width=0)
+
 if st.session_state.page == "team_access":
     show_team_access()
 
